@@ -73,41 +73,32 @@
     background:var(--ink); color:var(--bg); font-size:23px; padding:13px 26px;
     border-radius:999px; opacity:0; pointer-events:none; transition:opacity .25s}
   #toast.show{opacity:.95}
-  /* ---------- show card (Muse-pushed pop-up) ---------- */
-  #showwrap{position:fixed; inset:0; z-index:120; display:none;
-    align-items:center; justify-content:center; background:rgba(0,0,0,.42)}
-  #showwrap.open{display:flex}
-  #showcard{background:var(--card); color:var(--ink); border:1px solid var(--line);
-    border-radius:20px; width:min(680px,88vw); overflow:hidden;
-    box-shadow:0 18px 50px rgba(0,0,0,.35)}
-  #showimg{display:none; width:100%; aspect-ratio:16/9; object-fit:cover}
-  #showcard.hasimg #showimg{display:block}
-  #showbody{padding:24px 28px 26px}
-  #showtitle{font-size:32px; font-weight:600; line-height:1.25}
-  #showsub{display:none; font-size:23px; color:var(--soft); margin-top:8px; line-height:1.35}
-  #showbtns{display:flex; gap:12px; margin-top:22px; align-items:center}
+  /* ---------- show page (Muse-pushed content, full view) ---------- */
+  #shview.open{display:flex; flex-direction:column}
+  #shhead{display:flex; align-items:flex-start; gap:20px}
+  #shheadtxt{flex:1; min-width:0}
+  #showtitle{font-size:42px; font-weight:600; line-height:1.2}
+  #showsub{display:none; font-size:25px; color:var(--soft); margin-top:8px; line-height:1.35}
+  #shbtns{display:flex; gap:12px; align-items:center; flex:none}
   #showopen{font-size:24px; font-weight:600; padding:13px 34px; border-radius:14px;
     border:2px solid var(--gold); background:var(--gold); color:var(--card);
     cursor:pointer; text-decoration:none}
-  #showx{margin-left:auto; flex:none; width:52px; height:52px; border-radius:50%;
-    border:1px solid var(--line); background:transparent; color:var(--soft);
-    font-size:22px; cursor:pointer}
-  /* rich card (v2 sections): a taller sheet — smaller thumb, the
-     content scrolls, Open stays pinned at the bottom, ✕ top-right */
+  #showx{width:56px; height:56px; border-radius:50%; flex:none;
+    border:2px solid var(--gold); background:transparent; color:var(--gold);
+    font-size:24px; cursor:pointer}
+  #showimg{display:none; width:100%; object-fit:cover; border-radius:16px}
+  #shview.simple.hasimg #showimg{display:block; height:52vh; margin-top:24px; flex:none}
+  #shview.rich.hasimg #showimg{display:block; height:150px; margin-top:20px; flex:none}
   #showsecs{display:none}
-  #showcard.rich{display:flex; flex-direction:column; max-height:88vh; position:relative}
-  #showcard.rich #showimg{flex:none; height:170px; aspect-ratio:auto}
-  #showcard.rich #showbody{display:flex; flex-direction:column; flex:1; min-height:0}
-  #showcard.rich #showsecs{display:block; overflow-y:auto; min-height:0;
-    margin-top:16px; padding-right:6px; -webkit-overflow-scrolling:touch;
-    touch-action:pan-y}
-  .showsec-h{font-size:20px; font-weight:600; letter-spacing:1.6px;
-    text-transform:uppercase; color:var(--soft); margin:18px 0 8px}
-  .showsec-h:first-child{margin-top:0}
-  .showsec-l{font-size:24px; line-height:1.4; padding:3px 0}
-  #showcard.rich #showbtns{flex:none}
-  #showcard.rich #showx{position:absolute; top:12px; right:12px; margin:0;
-    background:var(--card)}
+  #shview.rich #showsecs{display:flex; gap:38px; flex:1; min-height:0; margin-top:24px}
+  .showsec{flex:1; min-width:0; overflow-y:auto; padding-right:6px;
+    -webkit-overflow-scrolling:touch; touch-action:pan-y}
+  .showsec:first-child{flex:.75}
+  .showsec-h{font-size:21px; font-weight:600; letter-spacing:1.6px;
+    text-transform:uppercase; color:var(--soft); margin:0 0 12px}
+  .showsec-l{font-size:26px; line-height:1.45; padding:4px 0}
+  #shownav{display:none}
+  #shownav.live{display:flex}
   .grr .del{margin-left:auto; flex:none; width:44px; height:44px; border-radius:50%;
     border:1px solid var(--line); background:transparent; color:var(--soft);
     font-size:19px; cursor:pointer; display:none}
@@ -426,6 +417,11 @@
     #caldays{display:block}
     #calhead .fam{font-size:28px}
     #calrange{font-size:22px}
+    /* show page: stack the section columns */
+    #shview.rich #showsecs{flex-direction:column; overflow-y:auto}
+    .showsec{flex:none; overflow:visible}
+    #shview.simple.hasimg #showimg{height:auto; aspect-ratio:16/9}
+    #showtitle{font-size:36px}
   }
 </style>
 </head>
@@ -437,6 +433,7 @@
   <button class="rbtn" data-nav="groceries" title="Groceries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h2.2l2.5 11.2a1.8 1.8 0 0 0 1.8 1.4h7.9a1.8 1.8 0 0 0 1.8-1.4L20.5 8H6"/><circle cx="10" cy="20.4" r="1.5"/><circle cx="17.5" cy="20.4" r="1.5"/></svg></button>
   <button class="rbtn" data-nav="calendar" title="Calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18"/><path d="M8 3v4M16 3v4"/><text id="calday" x="12" y="18.4" text-anchor="middle" font-size="8.5" font-weight="700" fill="currentColor" stroke="none">25</text></svg></button>
   <button class="rbtn" data-nav="photos" title="Photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.6" cy="9.6" r="1.7"/><path d="M4.8 17.6 10 12.2l3.1 3 2.7-2.5 3.4 3.4"/></svg></button>
+  <button class="rbtn" id="shownav" data-nav="show" title="Show"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10.5 9.8v4.4l4-2.2z" fill="currentColor" stroke="none"/></svg></button>
   <div class="sp"></div>
   <a class="rbtn app-only" href="portal://launch/org.chromium.chrome" title="Chrome">◎</a>
   <a class="rbtn app-only" href="portal://apps" title="All apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg></a>
@@ -604,20 +601,20 @@
 </section>
 
 <div id="toast"></div>
-<div id="showwrap">
-  <div id="showcard">
-    <img id="showimg" alt="">
-    <div id="showbody">
+<section id="shview" class="view">
+  <div id="shhead">
+    <div id="shheadtxt">
       <div id="showtitle"></div>
       <div id="showsub"></div>
-      <div id="showsecs"></div>
-      <div id="showbtns">
-        <a id="showopen" href="#">Open</a>
-        <button id="showx" title="Dismiss">✕</button>
-      </div>
+    </div>
+    <div id="shbtns">
+      <a id="showopen" href="#">Open</a>
+      <button id="showx" title="Done">✕</button>
     </div>
   </div>
-</div>
+  <img id="showimg" alt="">
+  <div id="showsecs"></div>
+</section>
 <audio id="azan" src="azan.mp3" preload="auto"></audio>
 <script>
 "use strict";
@@ -1003,7 +1000,7 @@ function renderPrayerView(){
 /* ---- side rail: one stage, five views. The selection persists
         server-side (/api/ui-state on DashServer) so the screensaver
         opens on the same view the app last showed — no auto-home. ---- */
-const VIEW_PANEL = {home:null, prayer:"prview", weather:"wxview", groceries:"grview", calendar:"calview", photos:"phview"};
+const VIEW_PANEL = {home:null, prayer:"prview", weather:"wxview", groceries:"grview", calendar:"calview", photos:"phview", show:"shview"};
 let CURVIEW = "home";
 let RAIL = true;
 function applyRail(){ document.body.classList.toggle("railoff", !RAIL); }
@@ -1051,7 +1048,7 @@ async function syncViewState(){
     const r = await fetch("/api/ui-state", {cache:"no-store"});
     if(!r.ok) return;
     const j = await r.json();
-    if(j.view && j.view !== CURVIEW) showView(j.view);
+    if(j.view && j.view !== CURVIEW && !(CURVIEW === "show" && document.body.classList.contains("showstanding"))) showView(j.view);
     const rail = j.rail !== false;
     if(rail !== RAIL){ RAIL = rail; applyRail(); }
     if(j.album && j.album !== CURALBUM && ALBUMS.length){
@@ -1981,54 +1978,59 @@ setInterval(fetchLive, 600000);
 setInterval(tick, 1000);
 tick();
 
-/* ---- show card: Muse can push a visual card (a recipe, a
-        video, a link) that pops over the dashboard. The server
-        holds it (/api/show); both faces render it, the app face
-        takes the taps. Open launches the link and hides the card
-        locally ONLY — the server keeps it, so a swallowed launch
-        loses nothing and the card is still there when he comes
-        back (re-open or ✕). Only ✕ clears it server-side. The
-        opened id is remembered for this page session so the poll
-        doesn't instantly re-show it; a fresh page load shows a
-        still-standing card again. v2: a card may carry sections
-        (ingredients, steps) rendered on the card itself, and the
-        url is then optional. ---- */
-let SHOW_ID = null, SHOW_OPENED_ID = null;
+/* ---- show page: Muse can push visual content (a recipe, a
+        video, a link) that takes over a full dashboard view. The
+        server holds it (/api/show); a NEW card switches both faces
+        to the Show view, but the same card never re-yanks the view
+        — if he navigates away, the rail's Show button (visible
+        only while a card stands) brings it back. Open follows the
+        portal://open link and the page stays underneath, so coming
+        back from Chrome lands on it again. Done (✕) clears the
+        card server-side and returns Home. A card may carry sections
+        (ingredients, steps) laid out as full-height columns —
+        no inner pop-up scroll box; the url is then optional. ---- */
+let SHOW_ID = null;
 function renderShow(j){
   $("showtitle").textContent = j.title || "";
   const sub = $("showsub");
   if(j.subtitle){ sub.textContent = j.subtitle; sub.style.display = "block"; }
   else sub.style.display = "none";
-  const card = $("showcard");
-  if(j.image){ $("showimg").src = j.image; card.classList.add("hasimg"); }
-  else { $("showimg").removeAttribute("src"); card.classList.remove("hasimg"); }
+  const view = $("shview");
+  if(j.image){ $("showimg").src = j.image; view.classList.add("hasimg"); }
+  else { $("showimg").removeAttribute("src"); view.classList.remove("hasimg"); }
   const secs = $("showsecs");
   secs.innerHTML = "";
   const hasSecs = Array.isArray(j.sections) && j.sections.length > 0;
   if(hasSecs){
     j.sections.forEach(s => {
+      const col = document.createElement("div");
+      col.className = "showsec";
       if(s.heading){
         const h = document.createElement("div");
         h.className = "showsec-h"; h.textContent = s.heading;
-        secs.appendChild(h);
+        col.appendChild(h);
       }
       (s.lines || []).forEach(line => {
         const d = document.createElement("div");
         d.className = "showsec-l"; d.textContent = line;
-        secs.appendChild(d);
+        col.appendChild(d);
       });
+      secs.appendChild(col);
     });
   }
-  card.classList.toggle("rich", hasSecs);
+  view.classList.toggle("rich", hasSecs);
+  view.classList.toggle("simple", !hasSecs);
   const open = $("showopen");
   if(j.url){ open.style.display = ""; open.href = "portal://open?url=" + encodeURIComponent(j.url); }
   else open.style.display = "none";
-  $("showwrap").classList.add("open");
 }
-function hideShow(){ $("showwrap").classList.remove("open"); }
+function goShow(){ if(IS_APP) setView("show"); else showView("show"); }
 async function dismissShow(){
-  hideShow();
+  SHOW_ID = null;
+  document.body.classList.remove("showstanding");
+  $("shownav").classList.remove("live");
   try{ await fetch("/api/show/clear", {method:"POST"}); }catch(e){}
+  if(IS_APP) setView("home"); else showView("home");
 }
 async function pollShow(){
   try{
@@ -2036,34 +2038,22 @@ async function pollShow(){
     if(!r.ok) return;
     const j = await r.json();
     if(j && j.id){
+      document.body.classList.add("showstanding");
+      $("shownav").classList.add("live");
       if(j.id !== SHOW_ID){
         SHOW_ID = j.id;
-        if(j.id !== SHOW_OPENED_ID) renderShow(j);
+        renderShow(j);
+        goShow();
       }
-    } else if(SHOW_ID !== null){ SHOW_ID = null; SHOW_OPENED_ID = null; hideShow(); }
+    } else if(SHOW_ID !== null || document.body.classList.contains("showstanding")){
+      SHOW_ID = null;
+      document.body.classList.remove("showstanding");
+      $("shownav").classList.remove("live");
+      if(CURVIEW === "show"){ if(IS_APP) setView("home"); else showView("home"); }
+    }
   }catch(e){ /* server hiccup — current state stays */ }
 }
-$("showopen").addEventListener("click", () => {
-  SHOW_OPENED_ID = SHOW_ID;
-  hideShow();
-});
 $("showx").addEventListener("click", () => { dismissShow(); });
-/* Coming BACK to the dashboard (from Chrome, the screensaver, or
-   another app) is the moment an opened-but-not-dismissed card
-   should be standing there again — the poll deliberately won't
-   re-show it mid-session, so the return transition does. */
-async function reshowOpened(){
-  if(SHOW_OPENED_ID === null) return;
-  try{
-    const r = await fetch("/api/show", {cache:"no-store"});
-    if(!r.ok) return;
-    const j = await r.json();
-    if(j && j.id && j.id === SHOW_OPENED_ID){ SHOW_ID = j.id; renderShow(j); }
-  }catch(e){ /* server hiccup — nothing to reshow */ }
-}
-document.addEventListener("visibilitychange", () => {
-  if(document.visibilityState === "visible") reshowOpened();
-});
 pollShow();
 setInterval(pollShow, 5000);
 </script>
