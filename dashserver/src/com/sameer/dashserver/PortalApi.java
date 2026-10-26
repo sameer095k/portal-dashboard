@@ -32,7 +32,8 @@ import java.util.Map;
  * calendar (shared to it as writer). Event creation inserts there
  * directly (insertFamilyEvent below, called from DashService's
  * /api/calendar/add); any failure falls back to the on-device queue
- * in DashService, drained host-side by build_data.py. Sameer's
+ * in DashService, which the calendar read retries on-device via the
+ * same insert path (DashService's flushQueue). Sameer's
  * primary calendar is deliberately not shared and never touched.
  * The read carries a "gid" (Google event id) ONLY on Family-calendar
  * events; update/delete hard-code the Family calendar in the Google
@@ -458,6 +459,16 @@ public class PortalApi {
                 + gid + " deleted");
     }
 
+    /** Parse an RFC 3339 timestamp. The page sends ISO strings with
+        fractional seconds (Date.toISOString), which the plain
+        pattern rejects — strip the fraction first. That rejection
+        silently 502'd every page-originated calendar read while
+        the snapshot covered for it; it surfaced the moment the
+        snapshot merge retired. */
+    private static Date parseRfc(SimpleDateFormat rfc, String s) throws Exception {
+        return rfc.parse(s.replace("Z", "+00:00").replaceAll("\\.\\d+", ""));
+    }
+
     private JSONObject agenda() throws Exception {
         JSONArray items = calendarListItems();
         Calendar day = Calendar.getInstance();
@@ -488,8 +499,9 @@ public class PortalApi {
                     JSONObject st = ev.getJSONObject("start");
                     JSONObject out = new JSONObject();
                     if (st.has("dateTime")) {
-                        Date when = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
-                                .parse(st.getString("dateTime").replace("Z", "+00:00"));
+                        Date when = parseRfc(new SimpleDateFormat(
+                                "yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US),
+                                st.getString("dateTime"));
                         out.put("time", new SimpleDateFormat("h:mm a", Locale.US).format(when));
                         out.put("_sort", when.getTime());
                     } else {
@@ -532,8 +544,8 @@ public class PortalApi {
         Date start, end;
         String tMin = q.get("timeMin"), tMax = q.get("timeMax");
         if (tMin != null && tMax != null) {
-            start = rfc.parse(tMin.replace("Z", "+00:00"));
-            end = rfc.parse(tMax.replace("Z", "+00:00"));
+            start = parseRfc(rfc, tMin);
+            end = parseRfc(rfc, tMax);
         } else {
             Calendar day = Calendar.getInstance();
             day.set(Calendar.HOUR_OF_DAY, 0); day.set(Calendar.MINUTE, 0);
@@ -591,8 +603,7 @@ public class PortalApi {
                                 out.put("start", st.getString("dateTime"));
                                 out.put("end", en.getString("dateTime"));
                                 out.put("allday", false);
-                                sort = rfc.parse(st.getString("dateTime")
-                                        .replace("Z", "+00:00")).getTime();
+                                sort = parseRfc(rfc, st.getString("dateTime")).getTime();
                             } else if (st.has("date") && en.has("date")) {
                                 out.put("start", st.getString("date"));
                                 out.put("end", en.getString("date"));

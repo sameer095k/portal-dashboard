@@ -53,6 +53,7 @@ public class DashService extends Service {
     private ServerSocket server;
     private PowerManager.WakeLock wakeLock;
     private PortalApi api;
+    private OnDevice onDevice;
     /** Photo uploads are accepted only while this window is open
         (the dashboard's Add Photos button opens it for 10 minutes). */
     private volatile long uploadOpenUntilMs = 0;
@@ -61,6 +62,7 @@ public class DashService extends Service {
     public void onCreate() {
         super.onCreate();
         api = new PortalApi(new GoogleClient(this));
+        onDevice = new OnDevice(this);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel(
                 "dashserver", "Dashboard server", NotificationManager.IMPORTANCE_MIN));
@@ -122,6 +124,12 @@ public class DashService extends Service {
                 return;
             }
             if (method.equals("PUT")) { handlePut(s, in, headers, path); return; }
+            if (method.equals("GET") && path.equals("/audio/wotd-ur.mp3")
+                    && onDevice != null) {
+                // A request for the word clip may be the first sign
+                // today's clip needs synthesizing on-device.
+                onDevice.kickAudioIfStale();
+            }
             if (!method.equals("GET") && !method.equals("HEAD")) {
                 OutputStream out = s.getOutputStream();
                 byte[] body = "method not allowed".getBytes("UTF-8");
@@ -180,6 +188,12 @@ public class DashService extends Service {
         int q = target.indexOf('?');
         if (q >= 0) { path = target.substring(0, q); query = target.substring(q + 1); }
         path = URLDecoder.decode(path, "UTF-8");
+        // Queued calendar adds retry on-device: a calendar read
+        // first tries to flush the queue through the same direct
+        // Family-calendar insert the add path uses (this replaces
+        // the old host-side drain in build_data.py). Best effort —
+        // failures stay queued and keep their "Queued" marking.
+        if (method.equals("GET") && path.equals("/api/calendar")) flushQueue();
         PortalApi.Result r = handleLocalApi(method, path, body);
         if (r == null) r = api.handle(method, path, query, body);
         OutputStream out = s.getOutputStream();
@@ -194,8 +208,10 @@ public class DashService extends Service {
     /** Dashboard-local endpoints (no Google key needed): the rail's
         persisted view, the photo library + album ops, the calendar
         add (native Family-calendar insert via PortalApi, with the
-        on-device queue as fallback), and the upload window. Returns
-        null for paths that belong to PortalApi. */
+        on-device queue as fallback), the upload window, and the
+        on-device content fetches (prayer times, word of the day —
+        see OnDevice). Returns null for paths that belong to
+        PortalApi. */
     private PortalApi.Result handleLocalApi(String method, String path, String body) {
         try {
             switch (path) {
@@ -409,9 +425,10 @@ public class DashService extends Service {
                     // for any reason, fall back to the on-device queue
                     // (cal-queue.json, served statically so the page
                     // can merge pending events into the week view),
-                    // which build_data.py's drain still empties — so
-                    // no add is ever lost. Server logs say which path
-                    // each add took; the page contract is unchanged.
+                    // which the calendar read retries on-device (see
+                    // flushQueue) — so no add is ever lost. Server
+                    // logs say which path each add took; the page
+                    // contract is unchanged.
                     if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     org.json.JSONObject req = new org.json.JSONObject(body);
                     String title = req.optString("title", "").trim();
@@ -469,6 +486,14 @@ public class DashService extends Service {
                     return new PortalApi.Result(200, new org.json.JSONObject()
                             .put("ok", true).put("removed", removed).toString());
                 }
+                case "/api/prayer": {
+                    if (!method.equals("GET")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    return new PortalApi.Result(200, onDevice.prayer().toString());
+                }
+                case "/api/word": {
+                    if (!method.equals("GET")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    return new PortalApi.Result(200, onDevice.word().toString());
+                }
                 default:
                     return null;
             }
@@ -478,6 +503,52 @@ public class DashService extends Service {
     }
 
     private static final Object QUEUE_LOCK = new Object();
+
+    /** Retry queued calendar adds through the direct Family-calendar
+        insert (the path /api/calendar/add tries first). Runs before
+        a GET /api/calendar read is answered, so a queued event that
+        lands appears in that same read as a normal Family event.
+        Entries missing title/start/end are left queued untouched;
+        entries whose insert fails stay queued too. Two-phase: the
+        queue is snapshotted under the lock, inserts happen outside
+        it, and only the succeeded ids are removed. */
+    private void flushQueue() {
+        org.json.JSONArray snapshot;
+        synchronized (QUEUE_LOCK) { snapshot = readQueue(); }
+        if (snapshot.length() == 0) return;
+        java.util.Set<String> done = new java.util.HashSet<>();
+        for (int i = 0; i < snapshot.length(); i++) {
+            org.json.JSONObject e = snapshot.optJSONObject(i);
+            if (e == null) continue;
+            String id = e.optString("id", "");
+            String title = e.optString("title", "").trim();
+            String start = e.optString("start", "").trim();
+            String end = e.optString("end", "").trim();
+            if (id.isEmpty() || title.isEmpty() || start.isEmpty() || end.isEmpty()) continue;
+            try {
+                api.insertFamilyEvent(e);
+                done.add(id);
+                android.util.Log.i("DashServer", "calendar queue flush:"
+                        + " inserted queued event " + id + " (" + title + ")");
+            } catch (Exception ex) {
+                android.util.Log.w("DashServer", "calendar queue flush:"
+                        + " insert failed for " + id + " (" + title + "): "
+                        + ex.getMessage() + " — stays queued");
+            }
+        }
+        if (done.isEmpty()) return;
+        synchronized (QUEUE_LOCK) {
+            org.json.JSONArray q = readQueue();
+            org.json.JSONArray keep = new org.json.JSONArray();
+            for (int i = 0; i < q.length(); i++) {
+                org.json.JSONObject e = q.optJSONObject(i);
+                if (e == null) continue;
+                if (done.contains(e.optString("id", ""))) continue;
+                keep.put(e);
+            }
+            try { writeQueue(keep); } catch (Exception ignored) { }
+        }
+    }
 
     private static File queueFile() { return new File(ROOT, "cal-queue.json"); }
 

@@ -665,41 +665,38 @@ function render(){
     gn.innerHTML = (DATA.grocery.now || []).map(i => "<li>" + i + "</li>").join("") || '<li class="empty">—</li>';
   }
   if(DATA.word){
+    document.getElementById("word").style.display = "";
     $("w-ur").textContent = DATA.word.ur;
     $("w-urt").textContent = [DATA.word.ur_translit, DATA.word.ur_meaning].filter(Boolean).join(" · ");
     $("play-ur").onclick = () => new Audio(DATA.word.audio_ur).play().catch(()=>{});
+  } else {
+    document.getElementById("word").style.display = "none";
   }
 }
 
-/* ---- live feeds: the page pulls prayer + weather itself (both sources
-        allow cross-origin reads), so they stay fresh wherever the page
-        lives — including fully local on the Portal. data.json remains the
-        carrier for grocery / agenda / word of the day, and a fallback
-        for prayer + weather if a live fetch fails. ---- */
-let SNAP = null;
-const MERIDIEM = {f:"AM", d:"PM", a:"PM", m:"PM", i:"PM"};
-
-function cleanAzan(t, infer){
-  if(!t) return null;
-  const m = /(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i.exec(t);
-  if(!m) return null;
-  return m[1] + ":" + m[2] + " " + (m[3] ? m[3].toUpperCase() : infer);
-}
-function cleanIqamah(t, key){
-  if(!t) return null;
-  const m = /(\d+):(\d+)\s*(AM|PM)?/i.exec(t);
-  if(!m) return null;
-  return m[1] + ":" + m[2] + " " + (m[3] ? m[3].toUpperCase() : MERIDIEM[key]);
-}
-function shapePrayer(iok, chess){
-  return { today: [
-    {name:"Fajr",    azan:cleanAzan(iok.t1),        iqamah:cleanIqamah(iok.f,"f"), chess_iqamah:cleanIqamah(chess.f,"f")},
-    {name:"Sunrise", azan:cleanAzan(iok.s,"AM"),    iqamah:null,                   chess_iqamah:null},
-    {name:"Dhuhr",   azan:cleanAzan(iok.t2,"PM"),   iqamah:cleanIqamah(iok.d,"d"), chess_iqamah:cleanIqamah(chess.d,"d")},
-    {name:"Asr",     azan:cleanAzan(iok.t3),        iqamah:cleanIqamah(iok.a,"a"), chess_iqamah:cleanIqamah(chess.a,"a")},
-    {name:"Maghrib", azan:cleanAzan(iok.t4),        iqamah:cleanIqamah(iok.m,"m"), chess_iqamah:cleanIqamah(chess.m,"m")},
-    {name:"Isha",    azan:cleanAzan(iok.t5),        iqamah:cleanIqamah(iok.i,"i"), chess_iqamah:cleanIqamah(chess.i,"i")}
-  ]};
+/* ---- live feeds: everything on the home face is fetched by the
+        Portal itself. Prayer times and the word of the day come from
+        DashServer's own fetchers (/api/prayer, /api/word — the server
+        caches them on-device per day), agenda and the home grocery
+        card read the live Google endpoints (/api/agenda,
+        /api/grocery), and weather is fetched straight from
+        Open-Meteo. Every successful fetch is cached in localStorage,
+        so a failed fetch leaves the last good data on screen. There
+        is no snapshot file anymore. ---- */
+const PR_CACHE_KEY = "pr_cache_v1", WX_CACHE_KEY = "wx_cache_v1",
+      AG_CACHE_KEY = "ag_cache_v1", HG_CACHE_KEY = "hg_cache_v1",
+      WORD_CACHE_KEY = "word_cache_v1";
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function seedFromCaches(){
+  DATA = {
+    prayer: lsGet(PR_CACHE_KEY),
+    weather: lsGet(WX_CACHE_KEY),
+    agenda: lsGet(AG_CACHE_KEY),
+    grocery: lsGet(HG_CACHE_KEY),
+    word: lsGet(WORD_CACHE_KEY)
+  };
+  render();
 }
 const WMO = [[0,"Clear"],[2,"Partly cloudy"],[3,"Overcast"],[48,"Fog"],[67,"Rain"],[77,"Snow"],[82,"Showers"],[99,"Thunderstorm"]];
 function wmoLabel(c){ let out = "—"; for(const [max,label] of WMO){ if(c <= max){ out = label; break; } } return out; }
@@ -709,12 +706,12 @@ async function fetchLive(){
   LIVE_FETCHING = true;
   const live = {};
   try{
-    const [ri, rc] = await Promise.all([
-      fetch("https://isalaah.com/loc/ca/schedule.php?p=clk&loc=iok", {cache:"no-store"}),
-      fetch("https://isalaah.com/loc/ca/schedule.php?p=clk&loc=chess", {cache:"no-store"})
-    ]);
-    if(ri.ok && rc.ok) live.prayer = shapePrayer(await ri.json(), await rc.json());
-  }catch(e){ /* fall back to snapshot */ }
+    const r = await fetch("/api/prayer", {cache:"no-store"});
+    if(r.ok){
+      const p = await r.json();
+      if(p && Array.isArray(p.today)) live.prayer = p;
+    }
+  }catch(e){ /* last-good prayer stays */ }
   WX_KICK_AT = Date.now();
   try{
     const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=34.0009&longitude=-117.8291&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation_probability,visibility,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,precipitation_sum&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=10", {cache:"no-store"});
@@ -769,41 +766,46 @@ async function fetchLive(){
                        hours, days };
       WX_LIVE = "ok";
     }
-  }catch(e){ WX_LIVE = "fail"; /* fall back to snapshot */ }
+  }catch(e){ WX_LIVE = "fail"; /* last-good weather stays */ }
   loadAlerts();
   LIVE_FETCHING = false;
   if(live.prayer || live.weather) merge(live);
   else if($("wxview").classList.contains("open")) renderWeatherView();
 }
 function merge(live){
-  const base = SNAP || {};
-  DATA = {
-    date_label: base.date_label || new Date().toLocaleDateString("en-US",{weekday:"long", month:"long", day:"numeric"}),
-    prayer: (live && live.prayer) || base.prayer || null,
-    weather: (live && live.weather) || base.weather || null,
-    grocery: base.grocery || null,
-    agenda: base.agenda || null,
-    calweeks: base.calweeks || null,
-    word: base.word || null
-  };
-  document.getElementById("word").style.display = DATA.word ? "" : "none";
+  if(!DATA) DATA = {};
+  if(live && live.prayer){ DATA.prayer = live.prayer; lsSet(PR_CACHE_KEY, live.prayer); }
+  if(live && live.weather){ DATA.weather = live.weather; lsSet(WX_CACHE_KEY, live.weather); }
   render();
   if($("wxview").classList.contains("open")) renderWeatherView();
 }
-async function loadSnap(){
+async function fetchWord(){
+  if(!DATA) return;
   try{
-    const r = await fetch("data.json?ts=" + Date.now(), {cache:"no-store"});
-    if(r.ok){ SNAP = await r.json(); merge(null); }
-  }catch(e){ /* local file may not exist yet; live feeds still render */ }
-  if(!DATA) merge(null);
+    const r = await fetch("/api/word", {cache:"no-store"});
+    if(!r.ok) return;
+    const w = await r.json();
+    if(w && w.ur){ DATA.word = w; lsSet(WORD_CACHE_KEY, w); render(); }
+  }catch(e){ /* last-good word stays */ }
+}
+async function loadHomeGrocery(){
+  if(!DATA) return;
+  try{
+    const r = await fetch("/api/grocery", {cache:"no-store"});
+    if(!r.ok) return;
+    const g = await r.json();
+    DATA.grocery = { now: (g.now || []).map(x => x.item) };
+    lsSet(HG_CACHE_KEY, DATA.grocery);
+    render();
+  }catch(e){ /* last-good grocery card stays */ }
 }
 /* ---- full-screen views (tap targets in the interactive app) ---- */
 function stripAP(t){ return t ? t.replace(/\s?[AP]M/i,"") : ""; }
 let WXALERT = [];
-/* Weather detail state: the snapshot's weather is home-screen-only
-   (now/label/hi/lo) — hours/days/tiles exist only on the live object.
-   wxFull() is the shape check that keeps a partial object from ever
-   rendering as a complete forecast. */
+/* Weather detail state: a cached weather object can in principle
+   be partial (header fields only) — hours/days/tiles exist only on
+   the full object. wxFull() is the shape check that keeps a partial
+   object from ever rendering as a complete forecast. */
 let WX_LIVE = "";        /* "" = no live attempt yet, "ok", "fail" */
 let WX_KICK_AT = 0;      /* last live weather attempt (ms) — re-kick throttle */
 let LIVE_FETCHING = false;
@@ -845,7 +847,7 @@ function renderWeatherView(){
   if(WXALERT.length){ al.textContent = "⚠ " + WXALERT[0]; al.className = "on"; }
   else { al.textContent = ""; al.className = ""; }
   if(!wxFull(w)){
-    /* Partial (snapshot-only) or missing weather: never render the detail
+    /* Partial or missing weather: never render the detail
        sections empty. Header still shows what we have, one status line
        explains the rest, and a live fetch is kicked (throttled) so the
        full forecast fills in when it lands — merge() re-renders us. */
@@ -1016,13 +1018,13 @@ async function syncViewState(){
   }catch(e){ /* server hiccup; keep current view */ }
 }
 
-/* ---- grocery view: live from the sheet via the on-device Google key
-        when present; otherwise read-only from the snapshot. A tap on
-        an item means "got it": the server clears the item's cell on
-        the sheet (value and any fill) and it leaves the list — there
-        is no marked/bought state. The view opens on the last fetched
-        list (localStorage) and refreshes silently — no loading
-        state; a failed refresh just keeps what's on screen. ---- */
+/* ---- grocery view: live from the sheet via the on-device Google
+        key. A tap on an item means "got it": the server clears the
+        item's cell on the sheet (value and any fill) and it leaves
+        the list — there is no marked/bought state. The view opens on
+        the last fetched list (localStorage) and refreshes silently —
+        no loading state; a failed refresh just keeps what's on
+        screen. ---- */
 let GR_LIVE = false, GR_NOW = [];
 const GR_CACHE_KEY = "gr_cache_v1";
 function grCache(){
@@ -1045,8 +1047,8 @@ function paintGroceryCached(){
     $("grnow").replaceChildren(...GR_NOW.map(x => grRow(x, "A")));
   } else {
     GR_LIVE = false;
-    const snap = (DATA && DATA.grocery) || {now:[]};
-    $("grnow").replaceChildren(...(snap.now || []).map(t => grRow({item:t}, "A")));
+    GR_NOW = [];
+    $("grnow").replaceChildren();
   }
   if(c && Array.isArray(c.cats)) USUALS = c.cats;
   renderUsuals();
@@ -1077,7 +1079,7 @@ function grRow(x, col){
           const r = await fetch("/api/grocery/delete", {method:"POST",
             headers:{"Content-Type":"application/json"},
             body: JSON.stringify({col, row: x.row})});
-          if(r.ok){ refreshGrocery(); loadSnap(); } else d.style.opacity = "";
+          if(r.ok){ refreshGrocery(); loadHomeGrocery(); } else d.style.opacity = "";
         }catch(e){ d.style.opacity = ""; }
       });
       d.appendChild(del);
@@ -1100,8 +1102,7 @@ async function refreshGrocery(){
       GR_LIVE = false;
       GR_NOW = [];
       $("grview").classList.remove("live");
-      const snap = (DATA && DATA.grocery) || {now:[]};
-      $("grnow").replaceChildren(...(snap.now || []).map(t => grRow({item:t}, "A")));
+      $("grnow").replaceChildren();
     }
     /* with a cached list on screen, a failed refresh changes nothing */
   }
@@ -1115,7 +1116,7 @@ $("graddbtn").addEventListener("click", async () => {
     const r = await fetch("/api/grocery/add", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({item: v, col: "A"})});
-    if(r.ok){ $("grinput").value = ""; refreshGrocery(); loadSnap(); }
+    if(r.ok){ $("grinput").value = ""; refreshGrocery(); loadHomeGrocery(); }
   }catch(e){ /* keep the text so he can retry */ }
 });
 
@@ -1200,7 +1201,7 @@ function renderUsuals(){
           const r = await fetch("/api/grocery/add", {method:"POST",
             headers:{"Content-Type":"application/json"},
             body: JSON.stringify({item, col: "A"})});
-          if(r.ok){ toast("Added " + item + " to " + cat.name); refreshGrocery(); loadSnap(); }
+          if(r.ok){ toast("Added " + item + " to " + cat.name); refreshGrocery(); loadHomeGrocery(); }
           else b.style.opacity = "";
         }catch(e){ b.style.opacity = ""; }
       });
@@ -1539,14 +1540,14 @@ $("phnewcancel").addEventListener("click", () => {
   $("phnewrow").classList.remove("open");
 });
 
-/* ---- calendar: Skylight-style week. The view unions three
-        sources, deduped by instant: the live /api/calendar read
-        (on-device key), the snapshot's +/-5-week window (build_data
-        via Sameer's own Google sign-in), and cal-queue.json — events
-        added on the Portal wait there because the key is read-only,
-        until the host-side drain writes them to Google. One data
-        set, two renders: landscape is the hour grid, portrait
-        stacks day cards. ---- */
+/* ---- calendar: Skylight-style week. The view unions two sources,
+        deduped by instant: the live /api/calendar read (the Portal's
+        service account reads the Family calendar — the only calendar
+        shared with it) and cal-queue.json — events added on the
+        Portal wait there when a direct insert fails, and the server
+        retries them on-device at every calendar read until they
+        land. One data set, two renders: landscape is the hour grid,
+        portrait stacks day cards. ---- */
 let CAL_OFF = 0, CAL_EVS = [], CAL_TAP = [];
 const CAL_H0 = 6, CAL_H1 = 23, CAL_PX = 44;
 const CAL_DOW = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
@@ -1577,29 +1578,12 @@ function isoLocal(d){
 }
 function calEvKey(e){
   // Instant-based key: the same event can surface from two sources
-  // (live read + snapshot) or two calendars with different offset
-  // spellings of the same moment — collapse those to one.
+  // (live read + queue) with different offset spellings of the same
+  // moment — collapse those to one.
   if(e.allday) return e.title + "|D|" + e.start + "|" + e.end;
   const s = Date.parse(e.start), en = Date.parse(e.end);
   if(isNaN(s) || isNaN(en)) return e.title + "|" + e.start + "|" + e.end;
   return e.title + "|" + s + "|" + en;
-}
-/* Tombstones: after an edit or a delete, the snapshot can still
-   hold the event's old copy (a stale instant after an edit, the
-   whole event after a delete) until the next snapshot build lands.
-   Remember the pre-mutation key for 48h and filter snapshot copies
-   against it. The live read is authoritative and never filtered. */
-function calTombstones(){
-  let t = [];
-  try{ t = JSON.parse(localStorage.getItem("cal_tomb_v1") || "[]"); }catch(e){}
-  const now = Date.now();
-  return (Array.isArray(t) ? t : [])
-    .filter(x => x && x.k && now - (x.t || 0) < 48 * 3600 * 1000);
-}
-function calTombstone(e){
-  const t = calTombstones();
-  t.push({k: calEvKey(e), t: Date.now()});
-  try{ localStorage.setItem("cal_tomb_v1", JSON.stringify(t.slice(-40))); }catch(err){}
 }
 async function loadCalendar(){
   const ws = calWeekStart(CAL_OFF);
@@ -1612,7 +1596,7 @@ async function loadCalendar(){
       const j = await r.json();
       if(Array.isArray(j.events)) live = j.events;
     }
-  }catch(e){ /* snapshot only */ }
+  }catch(e){ /* live read unavailable; queue only */ }
   let q = [];
   try{
     const r = await fetch("cal-queue.json?ts=" + Date.now(), {cache:"no-store"});
@@ -1621,24 +1605,23 @@ async function loadCalendar(){
       if(Array.isArray(j)) q = j;
     }
   }catch(e){ /* nothing queued */ }
-  // Merge precedence: the first copy of an event wins, and the
-  // order is live, then snapshot, then queue — so a Family event's
-  // live copy (the one carrying its Google id, hence editable) is
-  // the copy that renders, never its id-less snapshot twin.
-  const tomb = new Set(calTombstones().map(x => x.k));
+  // Merge precedence: the first copy of an event wins, live read
+  // first, then the queue — so a Family event's live copy (the one
+  // carrying its Google id, hence editable) is the copy that
+  // renders. The read also makes the server retry any queued adds
+  // first, so a queued event that just landed arrives as live and
+  // its queue copy dedupes away.
   const seen = new Set();
   CAL_EVS = [];
   const take = (e, src) => {
     if(!e || !e.title || !e.start || !e.end) return;
     const k = calEvKey(e);
-    if(src === "snap" && tomb.has(k)) return;
     if(seen.has(k)) return;
     seen.add(k);
     e.src = src;
     CAL_EVS.push(e);
   };
   for(const e of live) take(e, "live");
-  for(const e of (DATA && DATA.calweeks) || []) take(e, "snap");
   for(const e of q) take(e, "queue");
   renderCalendar();
 }
@@ -1793,7 +1776,6 @@ $("cf-save").addEventListener("click", async () => {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify(Object.assign({id: CF_EDIT.gid}, ev))});
       if(!r.ok) throw new Error("update failed");
-      calTombstone(CF_EDIT); // the snapshot may still hold the old copy
       $("calform").classList.remove("open");
       toast(title);
       loadCalendar();
@@ -1812,7 +1794,7 @@ $("cf-save").addEventListener("click", async () => {
 /* ---- event detail: tapping any event (grid block, all-day chip,
    portrait row) opens this sheet. A Family event — the live copy,
    carrying its Google id — gets Edit + Delete. A queued event gets
-   Remove. A snapshot event gets neither: view-only, conveyed by
+   Remove. Anything else gets neither: view-only, conveyed by
    the controls' absence. ---- */
 let CD_EV = null, CD_DEL_ARMED = false, CD_DEL_TIMER = null;
 function fmtCalDay(d){
@@ -1903,7 +1885,6 @@ $("cd-del").addEventListener("click", async () => {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({id: CD_EV.gid})});
     if(!r.ok) throw new Error("delete failed");
-    calTombstone(CD_EV); // keep the snapshot copy from resurrecting it
     const title = CD_EV.title;
     closeCalDetail();
     toast(title);
@@ -1924,23 +1905,29 @@ $("cd-remove").addEventListener("click", async () => {
   }catch(e){ cdErr("Couldn't remove — try again"); }
 });
 
-/* ---- live agenda from the calendar via the same key, when present ---- */
+/* ---- home agenda: today's events from the live calendar read,
+        cached in localStorage so a failed read leaves the last
+        good agenda on the home face. ---- */
 async function loadLiveAgenda(){
+  if(!DATA) return;
   try{
     const r = await fetch("/api/agenda", {cache:"no-store"});
     if(!r.ok) return;
     const j = await r.json();
-    if(DATA && Array.isArray(j.agenda)){ DATA.agenda = j.agenda; render(); }
-  }catch(e){ /* snapshot agenda stays */ }
+    if(Array.isArray(j.agenda)){ DATA.agenda = j.agenda; lsSet(AG_CACHE_KEY, j.agenda); render(); }
+  }catch(e){ /* last-good agenda stays */ }
 }
 
-loadSnap();
+seedFromCaches();
 fetchLive();
+fetchWord();
+loadHomeGrocery();
 loadLiveAgenda();
 syncViewState();
 setInterval(syncViewState, 15000);
-setInterval(loadSnap, 300000);
+setInterval(loadHomeGrocery, 300000);
 setInterval(loadLiveAgenda, 300000);
+setInterval(fetchWord, 1800000);
 setInterval(fetchLive, 600000);
 setInterval(tick, 1000);
 tick();
