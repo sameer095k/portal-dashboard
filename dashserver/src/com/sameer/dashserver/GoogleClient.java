@@ -118,10 +118,31 @@ public class GoogleClient {
                 json.getBytes(StandardCharsets.UTF_8), "application/json");
     }
 
+    /** Partial update. HttpURLConnection's method set has no PATCH,
+        so this rides a POST with Google's X-HTTP-Method-Override
+        header — the Calendar API honors it as a true PATCH. */
+    String patchJson(String url, String json) throws Exception {
+        return http("POST", url, accessToken(),
+                json.getBytes(StandardCharsets.UTF_8), "application/json",
+                "PATCH");
+    }
+
+    String delete(String url) throws Exception {
+        return http("DELETE", url, accessToken(), null, null);
+    }
+
     private String http(String method, String url, String bearer, byte[] body,
                         String contentType) throws Exception {
+        return http(method, url, bearer, body, contentType, null);
+    }
+
+    private String http(String method, String url, String bearer, byte[] body,
+                        String contentType, String methodOverride) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setRequestMethod(method);
+        if (methodOverride != null) {
+            c.setRequestProperty("X-HTTP-Method-Override", methodOverride);
+        }
         c.setConnectTimeout(15_000);
         c.setReadTimeout(20_000);
         if (bearer != null) c.setRequestProperty("Authorization", "Bearer " + bearer);

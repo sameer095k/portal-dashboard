@@ -23,7 +23,10 @@ import java.util.Map;
  *   POST /api/grocery/add        -> {item:"eggs", col:"A"}
  *   GET  /api/agenda             -> {agenda:[{time, title}]}
  *   GET  /api/calendar?timeMin=<rfc3339>&timeMax=<rfc3339>
- *                                -> {events:[{start, end, title, allday, location}]}
+ *                                -> {events:[{start, end, title, allday,
+ *                                     location, cal, gid?}]}
+ *   POST /api/calendar/update    -> {id, title, start, end, allday}
+ *   POST /api/calendar/delete    -> {id}
  *
  * The service account may write exactly one calendar — the Family
  * calendar (shared to it as writer). Event creation inserts there
@@ -31,6 +34,10 @@ import java.util.Map;
  * /api/calendar/add); any failure falls back to the on-device queue
  * in DashService, drained host-side by build_data.py. Sameer's
  * primary calendar is deliberately not shared and never touched.
+ * The read carries a "gid" (Google event id) ONLY on Family-calendar
+ * events; update/delete hard-code the Family calendar in the Google
+ * path, so the page can edit exactly those events and no others —
+ * an id from any other calendar simply does not resolve there.
  *
  * Backed by the service-account key (see GoogleClient). Without the
  * key, everything answers 501 and the page uses its snapshot instead.
@@ -92,6 +99,12 @@ public class PortalApi {
                     break;
                 case "/api/calendar":
                     if (method.equals("GET")) return ok(calendar(parseQuery(query)));
+                    break;
+                case "/api/calendar/update":
+                    if (method.equals("POST")) { updateFamilyEvent(new JSONObject(body)); return ok(new JSONObject().put("ok", true)); }
+                    break;
+                case "/api/calendar/delete":
+                    if (method.equals("POST")) { deleteFamilyEvent(new JSONObject(body)); return ok(new JSONObject().put("ok", true)); }
                     break;
                 default:
                     return err(404, "unknown api path");
@@ -381,7 +394,12 @@ public class PortalApi {
         Google's created-event JSON. Event shape matches the page's:
         {title, start, end, allday, location?} with RFC 3339 start/end
         for timed events and plain dates for all-day ones. */
-    JSONObject insertFamilyEvent(JSONObject ev) throws Exception {
+    /** The Google event resource for the page's event shape
+        {title, start, end, allday, location?}. Shared by insert and
+        update; as a PATCH body it touches only these fields, so an
+        event's location/description survive an edit — the page's
+        form has no location field and never sends one. */
+    private JSONObject eventBody(JSONObject ev) throws Exception {
         JSONObject body = new JSONObject();
         body.put("summary", ev.getString("title"));
         JSONObject start = new JSONObject(), end = new JSONObject();
@@ -398,9 +416,46 @@ public class PortalApi {
         body.put("end", end);
         String loc = ev.optString("location", "");
         if (!loc.isEmpty()) body.put("location", loc);
+        return body;
+    }
+
+    JSONObject insertFamilyEvent(JSONObject ev) throws Exception {
         String id = URLEncoder.encode(FAMILY_CAL_ID, "UTF-8");
         return new JSONObject(google.postJson(
-                CAL + "/calendars/" + id + "/events", body.toString()));
+                CAL + "/calendars/" + id + "/events",
+                eventBody(ev).toString()));
+    }
+
+    /** Patch one event in the Family calendar. The calendar id in
+        the path is always Family's; an id minted by any other
+        calendar cannot resolve under it, so no other calendar's
+        events are reachable through this endpoint. */
+    void updateFamilyEvent(JSONObject ev) throws Exception {
+        String gid = ev.optString("id", "").trim();
+        String title = ev.optString("title", "").trim();
+        String start = ev.optString("start", "").trim();
+        String end = ev.optString("end", "").trim();
+        if (gid.isEmpty() || title.isEmpty() || start.isEmpty() || end.isEmpty()) {
+            throw new Exception("bad event");
+        }
+        String cal = URLEncoder.encode(FAMILY_CAL_ID, "UTF-8");
+        String id = URLEncoder.encode(gid, "UTF-8");
+        google.patchJson(CAL + "/calendars/" + cal + "/events/" + id,
+                eventBody(ev).toString());
+        android.util.Log.i("DashServer", "calendar update: Family event "
+                + gid + " patched");
+    }
+
+    /** Delete one event from the Family calendar (same path rule
+        as update). */
+    void deleteFamilyEvent(JSONObject ev) throws Exception {
+        String gid = ev.optString("id", "").trim();
+        if (gid.isEmpty()) throw new Exception("bad event");
+        String cal = URLEncoder.encode(FAMILY_CAL_ID, "UTF-8");
+        String id = URLEncoder.encode(gid, "UTF-8");
+        google.delete(CAL + "/calendars/" + cal + "/events/" + id);
+        android.util.Log.i("DashServer", "calendar delete: Family event "
+                + gid + " deleted");
     }
 
     private JSONObject agenda() throws Exception {
@@ -498,7 +553,11 @@ public class PortalApi {
                 JSONObject calItem = items.getJSONObject(i);
                 String role = calItem.optString("accessRole", "");
                 if (!(role.equals("owner") || role.equals("writer") || role.equals("reader"))) continue;
-                String id = URLEncoder.encode(calItem.getString("id"), "UTF-8");
+                String rawId = calItem.getString("id");
+                boolean isFamily = FAMILY_CAL_ID.equals(rawId);
+                String calName = calItem.optString("summary", "");
+                if (calName.isEmpty() && isFamily) calName = "Family";
+                String id = URLEncoder.encode(rawId, "UTF-8");
                 String pageToken = null;
                 for (int page = 0; page < 3; page++) {
                     String url = CAL + "/calendars/" + id
@@ -518,6 +577,15 @@ public class PortalApi {
                             JSONObject out = new JSONObject();
                             out.put("title", ev.optString("summary", "(no title)"));
                             out.put("location", ev.optString("location", ""));
+                            if (!calName.isEmpty()) out.put("cal", calName);
+                            // The Google id rides along ONLY for the
+                            // Family calendar — it is what makes an
+                            // event editable from the page (update and
+                            // delete resolve ids under Family's path).
+                            if (isFamily) {
+                                String gid = ev.optString("id", "");
+                                if (!gid.isEmpty()) out.put("gid", gid);
+                            }
                             long sort;
                             if (st.has("dateTime") && en.has("dateTime")) {
                                 out.put("start", st.getString("dateTime"));

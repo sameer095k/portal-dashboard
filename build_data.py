@@ -303,10 +303,12 @@ def get_calweeks():
                 loc = ev.get("location") or ""
                 if st.get("dateTime") and en.get("dateTime"):
                     out.append({"start": st["dateTime"], "end": en["dateTime"],
-                                "title": title, "allday": False, "location": loc})
+                                "title": title, "allday": False, "location": loc,
+                                "cal": cal.get("summary") or ""})
                 elif st.get("date") and en.get("date"):
                     out.append({"start": st["date"], "end": en["date"],
-                                "title": title, "allday": True, "location": loc})
+                                "title": title, "allday": True, "location": loc,
+                                "cal": cal.get("summary") or ""})
             token = d.get("nextPageToken") or d.get("result", {}).get("nextPageToken")
             if not token:
                 break

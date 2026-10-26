@@ -311,6 +311,31 @@
     background:transparent; color:var(--gold); cursor:pointer}
   #cf-cancel{font-size:23px; padding:12px 30px; border-radius:14px;
     border:1px solid var(--line); background:transparent; color:var(--soft); cursor:pointer}
+  #cf-err{display:none; color:#c0392b; font-size:20px; margin-top:14px}
+  #cf-err.on{display:block}
+  .cev, .cad, .cevrow{cursor:pointer}
+  /* Queued adds (not yet in Google) must never pass for saved
+     events: dashed gold outline on the grid, plus the tag. */
+  .cev.queued, .cad.queued, .cevrow.queued{border:1.5px dashed var(--gold)}
+  .qtag{font-size:13px; font-weight:700; letter-spacing:.8px;
+    text-transform:uppercase; color:var(--gold); flex:none}
+  #caldetail{position:absolute; inset:0; display:none; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.35); z-index:6}
+  #caldetail.open{display:flex}
+  #cd-title{font-size:31px; font-weight:600; line-height:1.25; margin-bottom:14px}
+  .cdrow{font-size:23px; padding:7px 0; display:flex; gap:14px; align-items:baseline}
+  .cdrow .k{flex:none; width:112px; font-size:16px; letter-spacing:1.2px;
+    text-transform:uppercase; color:var(--soft); padding-top:4px}
+  #cd-err{display:none; color:#c0392b; font-size:20px; margin-top:12px}
+  #cd-err.on{display:block}
+  #cd-btns{display:flex; gap:10px; margin-top:22px; flex-wrap:wrap}
+  #cd-btns button{font-size:22px; padding:11px 26px; border-radius:14px; cursor:pointer}
+  #cd-edit{border:2px solid var(--gold); background:transparent; color:var(--gold)}
+  #cd-del{border:1px solid var(--line); background:transparent; color:var(--soft)}
+  #cd-del.armed{border-color:#c0392b; color:#c0392b; font-weight:600}
+  #cd-remove{border:1px solid var(--line); background:transparent; color:var(--soft)}
+  #cd-close{border:1px solid var(--line); background:transparent; color:var(--soft);
+    margin-left:auto}
   /* ---------- right : prayer + lists ---------- */
   #right{grid-area:right; display:flex; flex-direction:column; gap:22px; min-height:0}
   #prayer{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px}
@@ -371,15 +396,15 @@
 </head>
 <body>
 <nav id="rail">
-  <button class="rbtn" data-nav="home" title="Home">⌂</button>
-  <button class="rbtn" data-nav="prayer" title="Prayer">☪</button>
-  <button class="rbtn" data-nav="weather" title="Weather">☀</button>
+  <button class="rbtn" data-nav="home" title="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.2 12 4l8 7.2"/><path d="M6.3 9.4V20h11.4V9.4"/><path d="M10.2 20v-4.8h3.6V20"/></svg></button>
+  <button class="rbtn" data-nav="prayer" title="Prayer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/><path d="M17 2.9l.65 1.75L19.4 5.3l-1.75.65L17 7.7l-.65-1.75L14.6 5.3l1.75-.65z"/></svg></button>
+  <button class="rbtn" data-nav="weather" title="Weather"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
   <button class="rbtn" data-nav="groceries" title="Groceries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h2.2l2.5 11.2a1.8 1.8 0 0 0 1.8 1.4h7.9a1.8 1.8 0 0 0 1.8-1.4L20.5 8H6"/><circle cx="10" cy="20.4" r="1.5"/><circle cx="17.5" cy="20.4" r="1.5"/></svg></button>
   <button class="rbtn" data-nav="calendar" title="Calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18"/><path d="M8 3v4M16 3v4"/><text id="calday" x="12" y="18.4" text-anchor="middle" font-size="8.5" font-weight="700" fill="currentColor" stroke="none">25</text></svg></button>
   <button class="rbtn" data-nav="photos" title="Photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.6" cy="9.6" r="1.7"/><path d="M4.8 17.6 10 12.2l3.1 3 2.7-2.5 3.4 3.4"/></svg></button>
   <div class="sp"></div>
   <a class="rbtn app-only" href="portal://launch/org.chromium.chrome" title="Chrome">◎</a>
-  <a class="rbtn app-only" href="portal://apps" title="All apps">▦</a>
+  <a class="rbtn app-only" href="portal://apps" title="All apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg></a>
   <button class="rbtn" id="railhide" title="Hide rail">«</button>
 </nav>
 <button id="railtab" title="Show rail">›</button>
@@ -475,9 +500,26 @@
         <input id="cf-end" type="time">
       </div>
       <button id="cf-allday">All day</button>
+      <div id="cf-err"></div>
       <div id="cf-btns">
         <button id="cf-save">Save</button>
         <button id="cf-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div id="caldetail">
+    <div class="calcard">
+      <div id="cd-title"></div>
+      <div class="cdrow"><span class="k">When</span><span id="cd-when"></span></div>
+      <div class="cdrow" id="cd-locrow"><span class="k">Where</span><span id="cd-loc"></span></div>
+      <div class="cdrow" id="cd-calrow"><span class="k">Calendar</span><span id="cd-cal"></span></div>
+      <div class="cdrow" id="cd-qrow"><span class="k">Status</span><span>Queued</span></div>
+      <div id="cd-err"></div>
+      <div id="cd-btns">
+        <button id="cd-edit">Edit</button>
+        <button id="cd-del">Delete</button>
+        <button id="cd-remove">Remove</button>
+        <button id="cd-close">Close</button>
       </div>
     </div>
   </div>
@@ -1505,7 +1547,7 @@ $("phnewcancel").addEventListener("click", () => {
         until the host-side drain writes them to Google. One data
         set, two renders: landscape is the hour grid, portrait
         stacks day cards. ---- */
-let CAL_OFF = 0, CAL_EVS = [];
+let CAL_OFF = 0, CAL_EVS = [], CAL_TAP = [];
 const CAL_H0 = 6, CAL_H1 = 23, CAL_PX = 44;
 const CAL_DOW = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
 const CAL_MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1542,6 +1584,23 @@ function calEvKey(e){
   if(isNaN(s) || isNaN(en)) return e.title + "|" + e.start + "|" + e.end;
   return e.title + "|" + s + "|" + en;
 }
+/* Tombstones: after an edit or a delete, the snapshot can still
+   hold the event's old copy (a stale instant after an edit, the
+   whole event after a delete) until the next snapshot build lands.
+   Remember the pre-mutation key for 48h and filter snapshot copies
+   against it. The live read is authoritative and never filtered. */
+function calTombstones(){
+  let t = [];
+  try{ t = JSON.parse(localStorage.getItem("cal_tomb_v1") || "[]"); }catch(e){}
+  const now = Date.now();
+  return (Array.isArray(t) ? t : [])
+    .filter(x => x && x.k && now - (x.t || 0) < 48 * 3600 * 1000);
+}
+function calTombstone(e){
+  const t = calTombstones();
+  t.push({k: calEvKey(e), t: Date.now()});
+  try{ localStorage.setItem("cal_tomb_v1", JSON.stringify(t.slice(-40))); }catch(err){}
+}
 async function loadCalendar(){
   const ws = calWeekStart(CAL_OFF);
   const we = new Date(ws); we.setDate(we.getDate() + 7);
@@ -1562,15 +1621,25 @@ async function loadCalendar(){
       if(Array.isArray(j)) q = j;
     }
   }catch(e){ /* nothing queued */ }
+  // Merge precedence: the first copy of an event wins, and the
+  // order is live, then snapshot, then queue — so a Family event's
+  // live copy (the one carrying its Google id, hence editable) is
+  // the copy that renders, never its id-less snapshot twin.
+  const tomb = new Set(calTombstones().map(x => x.k));
   const seen = new Set();
   CAL_EVS = [];
-  for(const e of live.concat((DATA && DATA.calweeks) || [], q)){
-    if(!e || !e.title || !e.start || !e.end) continue;
+  const take = (e, src) => {
+    if(!e || !e.title || !e.start || !e.end) return;
     const k = calEvKey(e);
-    if(seen.has(k)) continue;
+    if(src === "snap" && tomb.has(k)) return;
+    if(seen.has(k)) return;
     seen.add(k);
+    e.src = src;
     CAL_EVS.push(e);
-  }
+  };
+  for(const e of live) take(e, "live");
+  for(const e of (DATA && DATA.calweeks) || []) take(e, "snap");
+  for(const e of q) take(e, "queue");
   renderCalendar();
 }
 function calBuckets(ws){
@@ -1603,6 +1672,8 @@ function renderCalendar(){
       : " – " + CAL_MON[we.getMonth()] + " " + we.getDate());
   const todayK = calDayKey(new Date());
   const days = calBuckets(ws);
+  CAL_TAP = [];
+  const tap = e => ' data-tap="' + (CAL_TAP.push(e) - 1) + '"';
   const bodyH = (CAL_H1 - CAL_H0) * CAL_PX;
   let hh = "";
   for(let h = CAL_H0; h < CAL_H1; h++){
@@ -1618,21 +1689,23 @@ function renderCalendar(){
     let all = "", blocks = "", rows = "";
     for(const it of days[i]){
       const e = it.e;
+      const q = e.src === "queue", qcls = q ? " queued" : "",
+        qtag = q ? '<span class="qtag">Queued</span>' : "";
       if(e.allday){
-        all += '<span class="cad">' + esc(e.title) + "</span>";
-        rows += '<div class="cevrow"><span class="t">All day</span><span>' + esc(e.title) +
-          "</span>" + (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
+        all += '<span class="cad' + qcls + '"' + tap(e) + '>' + esc(e.title) + "</span>";
+        rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">All day</span><span>' + esc(e.title) +
+          "</span>" + qtag + (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
         continue;
       }
-      rows += '<div class="cevrow"><span class="t">' + fmtCalTime(it.sd) + "</span><span>" +
-        esc(e.title) + "</span>" +
+      rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">' + fmtCalTime(it.sd) + "</span><span>" +
+        esc(e.title) + "</span>" + qtag +
         (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
       const sMin = Math.max(0, (it.sd - d) / 60000 - CAL_H0 * 60);
       const eMin = Math.min(bodyH / CAL_PX * 60, (it.ed - d) / 60000 - CAL_H0 * 60);
       if(eMin <= 0) continue;
       const dur = (it.ed - it.sd) / 60000;
       const minH = dur >= 45 ? 46 : 30; // two lines need the room
-      blocks += '<div class="cev" style="top:' + (sMin / 60 * CAL_PX) + "px;height:" +
+      blocks += '<div class="cev' + qcls + '"' + tap(e) + ' style="top:' + (sMin / 60 * CAL_PX) + "px;height:" +
         Math.max((eMin - sMin) / 60 * CAL_PX, minH) + 'px"><span class="w">' + esc(e.title) + "</span>" +
         (dur >= 45 ? '<span class="t">' + fmtCalTime(it.sd) + " – " + fmtCalTime(it.ed) + "</span>" : "") +
         "</div>";
@@ -1655,7 +1728,14 @@ function renderCalendar(){
 $("calprev").addEventListener("click", () => { CAL_OFF--; loadCalendar(); });
 $("calnext").addEventListener("click", () => { CAL_OFF++; loadCalendar(); });
 let CF_ALLDAY = false;
+let CF_MODE = "add", CF_EDIT = null;
+function cfErr(msg){
+  const el = $("cf-err");
+  el.textContent = msg || "";
+  el.classList.toggle("on", !!msg);
+}
 $("caladd").addEventListener("click", () => {
+  CF_MODE = "add"; CF_EDIT = null; cfErr("");
   const ws = calWeekStart(CAL_OFF);
   const now = new Date();
   const base = (now >= ws && now < new Date(ws.getTime() + 7 * 86400000)) ? now : ws;
@@ -1687,9 +1767,16 @@ $("cf-save").addEventListener("click", async () => {
   const p = dv.split("-").map(Number);
   let ev;
   if(CF_ALLDAY){
+    // Editing a multi-day all-day event keeps its span: the form
+    // picks the start day, the length rides along.
+    let span = 1;
+    if(CF_MODE === "edit" && CF_EDIT && CF_EDIT.allday){
+      const os = Date.parse(CF_EDIT.start), oe = Date.parse(CF_EDIT.end);
+      if(!isNaN(os) && !isNaN(oe) && oe > os) span = Math.round((oe - os) / 86400000);
+    }
     ev = { title, allday: true,
            start: calDayKey(new Date(p[0], p[1] - 1, p[2])),
-           end: calDayKey(new Date(p[0], p[1] - 1, p[2] + 1)) };
+           end: calDayKey(new Date(p[0], p[1] - 1, p[2] + span)) };
   } else {
     const sp = $("cf-start").value.split(":").map(Number);
     const ep = $("cf-end").value.split(":").map(Number);
@@ -1699,15 +1786,142 @@ $("cf-save").addEventListener("click", async () => {
     if(e2 <= s) e2 = new Date(s.getTime() + 3600000);
     ev = { title, allday: false, start: isoLocal(s), end: isoLocal(e2) };
   }
+  cfErr("");
   try{
+    if(CF_MODE === "edit" && CF_EDIT){
+      const r = await fetch("/api/calendar/update", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(Object.assign({id: CF_EDIT.gid}, ev))});
+      if(!r.ok) throw new Error("update failed");
+      calTombstone(CF_EDIT); // the snapshot may still hold the old copy
+      $("calform").classList.remove("open");
+      toast(title);
+      loadCalendar();
+      return;
+    }
     const r = await fetch("/api/calendar/add", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify(ev)});
-    if(!r.ok) return; // form stays open for a retry
+    if(!r.ok){ cfErr("Couldn't save — try again"); return; }
     $("calform").classList.remove("open");
     CAL_EVS.push(ev);
     renderCalendar();
     toast(title);
-  }catch(e){ /* form stays open for a retry */ }
+  }catch(e){ cfErr("Couldn't save — try again"); }
+});
+
+/* ---- event detail: tapping any event (grid block, all-day chip,
+   portrait row) opens this sheet. A Family event — the live copy,
+   carrying its Google id — gets Edit + Delete. A queued event gets
+   Remove. A snapshot event gets neither: view-only, conveyed by
+   the controls' absence. ---- */
+let CD_EV = null, CD_DEL_ARMED = false, CD_DEL_TIMER = null;
+function fmtCalDay(d){
+  return CAL_DOW[d.getDay()] + ", " + CAL_MON[d.getMonth()] + " " + d.getDate();
+}
+function calWhenText(e){
+  if(e.allday){
+    const sd = new Date(e.start + "T00:00:00"), ed = new Date(e.end + "T00:00:00");
+    if(isNaN(sd) || isNaN(ed)) return "All day";
+    const last = new Date(ed); last.setDate(last.getDate() - 1);
+    if(calDayKey(last) === calDayKey(sd)) return fmtCalDay(sd) + " · All day";
+    return fmtCalDay(sd) + " – " + fmtCalDay(last) + " · All day";
+  }
+  const sd = new Date(e.start), ed = new Date(e.end);
+  if(isNaN(sd) || isNaN(ed)) return "";
+  let w = fmtCalDay(sd) + " · " + fmtCalTime(sd) + " – ";
+  if(calDayKey(ed) !== calDayKey(sd)) w += fmtCalDay(ed) + " ";
+  return w + fmtCalTime(ed);
+}
+function cdErr(msg){
+  const el = $("cd-err");
+  el.textContent = msg || "";
+  el.classList.toggle("on", !!msg);
+}
+function cdDisarm(){
+  CD_DEL_ARMED = false;
+  if(CD_DEL_TIMER){ clearTimeout(CD_DEL_TIMER); CD_DEL_TIMER = null; }
+  $("cd-del").classList.remove("armed");
+  $("cd-del").textContent = "Delete";
+}
+function openCalDetail(e){
+  if(!e) return;
+  CD_EV = e;
+  cdErr(""); cdDisarm();
+  $("cd-title").textContent = e.title;
+  $("cd-when").textContent = calWhenText(e);
+  $("cd-locrow").style.display = e.location ? "flex" : "none";
+  $("cd-loc").textContent = e.location || "";
+  $("cd-calrow").style.display = e.cal ? "flex" : "none";
+  $("cd-cal").textContent = e.cal || "";
+  const fam = !!e.gid, queued = e.src === "queue";
+  $("cd-qrow").style.display = queued ? "flex" : "none";
+  $("cd-edit").style.display = fam ? "" : "none";
+  $("cd-del").style.display = fam ? "" : "none";
+  $("cd-remove").style.display = queued ? "" : "none";
+  $("caldetail").classList.add("open");
+}
+function closeCalDetail(){ $("caldetail").classList.remove("open"); CD_EV = null; }
+$("cd-close").addEventListener("click", closeCalDetail);
+$("caldetail").addEventListener("click", ev => {
+  if(ev.target === $("caldetail")) closeCalDetail();
+});
+$("calview").addEventListener("click", ev => {
+  const t = ev.target.closest("[data-tap]");
+  if(t) openCalDetail(CAL_TAP[Number(t.getAttribute("data-tap"))]);
+});
+$("cd-edit").addEventListener("click", () => {
+  if(!CD_EV || !CD_EV.gid) return;
+  CF_MODE = "edit"; CF_EDIT = CD_EV; cfErr("");
+  $("cf-title").value = CD_EV.title;
+  CF_ALLDAY = !!CD_EV.allday;
+  if(CF_ALLDAY){
+    $("cf-date").value = CD_EV.start;
+  } else {
+    const sd = new Date(CD_EV.start), ed = new Date(CD_EV.end);
+    $("cf-date").value = calDayKey(sd);
+    $("cf-start").value = pad(sd.getHours()) + ":" + pad(sd.getMinutes());
+    $("cf-end").value = pad(ed.getHours()) + ":" + pad(ed.getMinutes());
+  }
+  $("cf-allday").classList.toggle("on", CF_ALLDAY);
+  $("cf-times").style.display = CF_ALLDAY ? "none" : "flex";
+  closeCalDetail();
+  $("calform").classList.add("open");
+  $("cf-title").focus();
+});
+$("cd-del").addEventListener("click", async () => {
+  if(!CD_EV || !CD_EV.gid) return;
+  if(!CD_DEL_ARMED){
+    CD_DEL_ARMED = true;
+    $("cd-del").classList.add("armed");
+    $("cd-del").textContent = "Tap again to delete";
+    CD_DEL_TIMER = setTimeout(cdDisarm, 3500);
+    return;
+  }
+  cdDisarm();
+  try{
+    const r = await fetch("/api/calendar/delete", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({id: CD_EV.gid})});
+    if(!r.ok) throw new Error("delete failed");
+    calTombstone(CD_EV); // keep the snapshot copy from resurrecting it
+    const title = CD_EV.title;
+    closeCalDetail();
+    toast(title);
+    loadCalendar();
+  }catch(e){ cdErr("Couldn't delete — try again"); }
+});
+$("cd-remove").addEventListener("click", async () => {
+  if(!CD_EV) return;
+  try{
+    const r = await fetch("/api/calendar/dequeue", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ids: [CD_EV.id]})});
+    if(!r.ok) throw new Error("dequeue failed");
+    const title = CD_EV.title;
+    closeCalDetail();
+    toast(title);
+    loadCalendar();
+  }catch(e){ cdErr("Couldn't remove — try again"); }
 });
 
 /* ---- live agenda from the calendar via the same key, when present ---- */
