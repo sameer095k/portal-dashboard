@@ -106,7 +106,7 @@
   /* ---------- photos ---------- */
   #phview{padding:0; background:#000}
   #phimg{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:none}
-  #phempty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  #phempty{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
     color:#9a958a; font-size:30px; text-align:center; padding:40px}
   #phbar{position:absolute; left:0; right:0; bottom:0; padding:18px 26px;
     display:none; gap:12px; align-items:center;
@@ -1119,6 +1119,37 @@ async function syncViewState(){
       showPhoto();
       if(PHEDIT) renderGrid();
     }
+    /* Photo settings are server-shared (see postPhSettings): adopt the
+       server's rotate/pin so both faces run the same settings. The
+       20s guard keeps a just-made local change from being reverted by
+       a sync that raced its post. */
+    if(Date.now() - PHSET_AT > 20000){
+      if(typeof j.rotate === "number" && PH_ROT_MS.indexOf(j.rotate) >= 0 && j.rotate !== PHROT){
+        PHROT = j.rotate;
+        localStorage.setItem("ph_rotate_ms", String(PHROT));
+        armPhotoTimer();
+        renderPhSettings();
+      }
+      if("pin" in j){
+        const jp = j.pin || null;
+        if(jp !== PHPIN){
+          PHPIN = jp;
+          if(PHPIN) localStorage.setItem("ph_pin", PHPIN);
+          else localStorage.removeItem("ph_pin");
+          snapPin();
+          showPhoto();
+          refreshPinBtn();
+          renderPhSettings();
+        }
+      }
+    }
+    /* First run after the move: the app face seeds the server from its
+       stored settings (where Sameer set them); the screensaver face
+       never seeds, it only adopts. */
+    if(IS_APP && !PHSEEDED && typeof j.rotate !== "number" && !("pin" in j)){
+      PHSEEDED = true;
+      postPhSettings();
+    }
   }catch(e){ /* server hiccup; keep current view */ }
 }
 
@@ -1359,6 +1390,18 @@ let PHROT = parseInt(localStorage.getItem("ph_rotate_ms"), 10);
 if(!PH_ROT_MS.includes(PHROT)) PHROT = 30000;
 let PHPIN = localStorage.getItem("ph_pin") || null;
 let PHON = false;
+/* Rotate + pin are shared through the server's ui-state: the app and
+   screensaver faces run in different apps with separate localStorage,
+   so a setting changed on one face never reached the other (the 1 min
+   set in the app while the screensaver kept its own speed). Local
+   changes post immediately; syncViewState adopts the server's values;
+   localStorage remains only as the pre-sync seed/fallback. */
+let PHSET_AT = 0, PHSEEDED = false;
+function postPhSettings(){
+  PHSET_AT = Date.now();
+  fetch("/api/ui-state", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({rotate: PHROT, pin: PHPIN})}).catch(()=>{});
+}
 function pinPath(p){ return p ? p.split("?")[0] : p; }
 function pinIndex(){ return PHPIN ? PH.findIndex(p => pinPath(p) === PHPIN) : -1; }
 function snapPin(){ const i = pinIndex(); if(i >= 0) PHI = i; }
@@ -1437,6 +1480,7 @@ async function loadPhotos(){
       if(PHPIN && !fresh.some(a => (a.photos || []).some(p => pinPath(p) === PHPIN))){
         PHPIN = null;
         localStorage.removeItem("ph_pin");
+        postPhSettings();
         renderPhSettings();
         refreshPinBtn();
       }
@@ -1506,6 +1550,7 @@ function renderPhSettings(){
 function setRotate(ms){
   PHROT = ms;
   localStorage.setItem("ph_rotate_ms", String(ms));
+  postPhSettings();
   renderPhSettings();
   armPhotoTimer();
 }
@@ -1518,6 +1563,7 @@ $("phpinbtn").addEventListener("click", () => {
   if(PHPIN){
     PHPIN = null;
     localStorage.removeItem("ph_pin");
+    postPhSettings();
     renderPhSettings();
     refreshPinBtn();
     armPhotoTimer(); /* rotation resumes at the current speed */
@@ -1527,6 +1573,7 @@ $("phpinbtn").addEventListener("click", () => {
   if(!PH.length) return;
   PHPIN = pinPath(PH[PHI % PH.length]);
   localStorage.setItem("ph_pin", PHPIN);
+  postPhSettings();
   renderPhSettings();
   refreshPinBtn();
   toast("Showing only this photo");
@@ -1534,6 +1581,7 @@ $("phpinbtn").addEventListener("click", () => {
 $("phpinclear").addEventListener("click", () => {
   PHPIN = null;
   localStorage.removeItem("ph_pin");
+  postPhSettings();
   renderPhSettings();
   refreshPinBtn();
   toast("Showing all photos");
