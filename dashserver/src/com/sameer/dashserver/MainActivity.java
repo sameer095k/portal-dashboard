@@ -55,19 +55,16 @@ public class MainActivity extends Activity {
                             // portal://open?url=<urlencoded> — show-card
                             // taps land here: open the link in the real
                             // Chrome (WebRTC/pages the WebView can't
-                            // carry), default browser as fallback.
-                            String u = java.net.URLDecoder.decode(
+                            // carry), default browser as fallback. The
+                            // launch is posted to the view's queue so
+                            // it fires after the tap's navigation
+                            // handling settles: a startActivity fired
+                            // mid dream-exit transition got swallowed
+                            // on 2026-10-25 (the tap's clear landed,
+                            // Chrome never surfaced).
+                            final String u = java.net.URLDecoder.decode(
                                     rest.substring("open?url=".length()), "UTF-8");
-                            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
-                            i.setPackage("org.chromium.chrome");
-                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            try {
-                                startActivity(i);
-                            } catch (Exception e) {
-                                Intent j = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
-                                j.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                startActivity(j);
-                            }
+                            view.post(() -> MainActivity.this.openExternal(u));
                         } else if (rest.startsWith("launch/")) {
                             String pkg = rest.substring("launch/".length());
                             Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
@@ -89,6 +86,31 @@ public class MainActivity extends Activity {
         // ?app=1 marks the interactive twin: the page shows app-only
         // controls (rail launch buttons, delete, upload) only here.
         web.loadUrl("http://127.0.0.1:" + DashService.PORT + "/index.html?app=1");
+    }
+
+    /** Open a URL outside the WebView: Chrome first, then any
+        browser, then the chooser. NEW_TASK throughout — the
+        dashboard activity may be pausing (dream exit, screensaver
+        handoff) at the moment a show-card tap lands. */
+    private void openExternal(String u) {
+        Uri uri = Uri.parse(u);
+        Intent i = new Intent(Intent.ACTION_VIEW, uri);
+        i.setPackage("org.chromium.chrome");
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(i);
+            return;
+        } catch (Exception ignored) { }
+        Intent j = new Intent(Intent.ACTION_VIEW, uri);
+        j.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(j);
+            return;
+        } catch (Exception ignored) { }
+        try {
+            startActivity(Intent.createChooser(j, null)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception ignored) { }
     }
 
     @Override
