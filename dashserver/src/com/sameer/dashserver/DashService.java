@@ -194,12 +194,25 @@ public class DashService extends Service {
         // the old host-side drain in build_data.py). Best effort —
         // failures stay queued and keep their "Queued" marking.
         if (method.equals("GET") && path.equals("/api/calendar")) flushQueue();
-        PortalApi.Result r = handleLocalApi(method, path, body);
+        PortalApi.Result r = null;
+        // POST /api/show is the one local API that changes what the
+        // kitchen screen shows, so it takes the upload bearer token —
+        // the page only ever reads and clears (see handleLocalApi).
+        if (method.equals("POST") && path.equals("/api/show")) {
+            String auth = headers.get("authorization");
+            if (auth == null || !auth.equals("Bearer " + TOKEN)) {
+                r = new PortalApi.Result(401, "{\"error\":\"auth\"}");
+            } else {
+                r = saveShowCard(body);
+            }
+        }
+        if (r == null) r = handleLocalApi(method, path, body);
         if (r == null) r = api.handle(method, path, query, body);
         OutputStream out = s.getOutputStream();
         byte[] bytes = r.body.getBytes("UTF-8");
         String reason = r.status == 200 ? "OK" : r.status == 501 ? "Not Implemented"
                 : r.status == 404 ? "Not Found" : r.status == 405 ? "Method Not Allowed"
+                : r.status == 401 ? "Unauthorized" : r.status == 400 ? "Bad Request"
                 : "Bad Gateway";
         writeHead(out, r.status, reason, "application/json", bytes.length);
         out.write(bytes); out.flush(); s.close();
@@ -486,6 +499,30 @@ public class DashService extends Service {
                     return new PortalApi.Result(200, new org.json.JSONObject()
                             .put("ok", true).put("removed", removed).toString());
                 }
+                case "/api/show": {
+                    if (!method.equals("GET")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    synchronized (SHOW_LOCK) {
+                        File f = new File(ROOT, "show.json");
+                        if (f.isFile()) {
+                            try (InputStream in = new FileInputStream(f)) {
+                                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                                byte[] buf = new byte[1024]; int n;
+                                while ((n = in.read(buf)) > 0) b.write(buf, 0, n);
+                                String t = b.toString("UTF-8").trim();
+                                if (t.startsWith("{")) return new PortalApi.Result(200, t);
+                            }
+                        }
+                    }
+                    return new PortalApi.Result(200, "{\"id\":null}");
+                }
+                case "/api/show/clear": {
+                    if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    synchronized (SHOW_LOCK) {
+                        File f = new File(ROOT, "show.json");
+                        if (f.exists()) f.delete();
+                    }
+                    return new PortalApi.Result(200, "{\"ok\":true}");
+                }
                 case "/api/prayer": {
                     if (!method.equals("GET")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     return new PortalApi.Result(200, onDevice.prayer().toString());
@@ -499,6 +536,49 @@ public class DashService extends Service {
             }
         } catch (Exception e) {
             return new PortalApi.Result(502, "{\"error\":\"local api\"}");
+        }
+    }
+
+    private static final Object SHOW_LOCK = new Object();
+
+    /** Store a Muse-pushed show card (show.json in the served dir;
+        the page polls GET /api/show and renders it until the card is
+        opened or dismissed). POSTed only with the upload bearer
+        token — see handleApi. Each POST replaces the current card
+        and re-stamps id/created with the server clock. */
+    private PortalApi.Result saveShowCard(String body) {
+        try {
+            org.json.JSONObject req = new org.json.JSONObject(body);
+            String title = req.optString("title", "").trim();
+            String url = req.optString("url", "").trim();
+            if (title.isEmpty() || title.length() > 200 || url.length() > 1000
+                    || !(url.startsWith("http://") || url.startsWith("https://"))) {
+                return new PortalApi.Result(400, "{\"error\":\"bad card\"}");
+            }
+            long now = System.currentTimeMillis();
+            org.json.JSONObject card = new org.json.JSONObject();
+            card.put("id", now);
+            card.put("created", now);
+            card.put("title", title);
+            card.put("url", url);
+            String sub = req.optString("subtitle", "").trim();
+            if (!sub.isEmpty()) card.put("subtitle",
+                    sub.length() > 300 ? sub.substring(0, 300) : sub);
+            String img = req.optString("image", "").trim();
+            if (!img.isEmpty() && img.length() <= 1000
+                    && (img.startsWith("http://") || img.startsWith("https://"))) {
+                card.put("image", img);
+            }
+            synchronized (SHOW_LOCK) {
+                if (!ROOT.exists()) ROOT.mkdirs();
+                try (FileOutputStream fos = new FileOutputStream(new File(ROOT, "show.json"))) {
+                    fos.write(card.toString().getBytes("UTF-8"));
+                }
+            }
+            return new PortalApi.Result(200, new org.json.JSONObject()
+                    .put("ok", true).put("id", now).toString());
+        } catch (Exception e) {
+            return new PortalApi.Result(400, "{\"error\":\"bad card\"}");
         }
     }
 
