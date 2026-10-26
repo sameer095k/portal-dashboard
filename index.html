@@ -156,7 +156,7 @@
     padding:26px; width:min(560px,92%)}
   .phset-k{font-size:17px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--soft); margin-bottom:12px}
-  #phrotchips{display:flex; gap:10px; flex-wrap:wrap}
+  #phrotchips,#phordchips{display:flex; gap:10px; flex-wrap:wrap}
   .rotchip{font-size:21px; padding:9px 18px; border-radius:999px; cursor:pointer;
     border:2px solid var(--line); background:transparent; color:var(--ink)}
   .rotchip.on{border-color:var(--gold); color:var(--gold)}
@@ -595,6 +595,8 @@
     <div class="phset-card">
       <div class="phset-k">Rotate</div>
       <div id="phrotchips"></div>
+      <div class="phset-k" style="margin-top:22px">Order</div>
+      <div id="phordchips"></div>
       <div id="phpinrow">
         <img id="phpinthumb" alt="">
         <span id="phpinname"></span>
@@ -1142,12 +1144,23 @@ async function syncViewState(){
           renderPhSettings();
         }
       }
+      if(typeof j.order === "string" && (j.order === "seq" || j.order === "shuffle") && j.order !== PHORDER){
+        PHORDER = j.order;
+        localStorage.setItem("ph_order", PHORDER);
+        PHBAG = []; PHHIST = [];
+        renderPhSettings();
+      }
     }
     /* First run after the move: the app face seeds the server from its
        stored settings (where Sameer set them); the screensaver face
        never seeds, it only adopts. */
     if(IS_APP && !PHSEEDED && typeof j.rotate !== "number" && !("pin" in j)){
       PHSEEDED = true;
+      postPhSettings();
+    }
+    /* Same seeding for order on installs that predate it (6.11). */
+    if(IS_APP && !PHORDSEEDED && !("order" in j)){
+      PHORDSEEDED = true;
       postPhSettings();
     }
   }catch(e){ /* server hiccup; keep current view */ }
@@ -1389,6 +1402,12 @@ const PH_ROT_LB = ["10s", "30s", "1 min", "5 min", "Off"];
 let PHROT = parseInt(localStorage.getItem("ph_rotate_ms"), 10);
 if(!PH_ROT_MS.includes(PHROT)) PHROT = 30000;
 let PHPIN = localStorage.getItem("ph_pin") || null;
+/* Playback order: "shuffle" draws at random from the selected album
+   (no repeats until the album has shown once, then a fresh bag);
+   "seq" is the original in-order walk. Defaults to shuffle — that is
+   how Sameer asked for the carousel to behave (2026-10-26). */
+let PHORDER = localStorage.getItem("ph_order") || "shuffle";
+if(PHORDER !== "shuffle" && PHORDER !== "seq") PHORDER = "shuffle";
 let PHON = false;
 /* Rotate + pin are shared through the server's ui-state: the app and
    screensaver faces run in different apps with separate localStorage,
@@ -1396,11 +1415,11 @@ let PHON = false;
    set in the app while the screensaver kept its own speed). Local
    changes post immediately; syncViewState adopts the server's values;
    localStorage remains only as the pre-sync seed/fallback. */
-let PHSET_AT = 0, PHSEEDED = false;
+let PHSET_AT = 0, PHSEEDED = false, PHORDSEEDED = false;
 function postPhSettings(){
   PHSET_AT = Date.now();
   fetch("/api/ui-state", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({rotate: PHROT, pin: PHPIN})}).catch(()=>{});
+    body: JSON.stringify({rotate: PHROT, pin: PHPIN, order: PHORDER})}).catch(()=>{});
 }
 function pinPath(p){ return p ? p.split("?")[0] : p; }
 function pinIndex(){ return PHPIN ? PH.findIndex(p => pinPath(p) === PHPIN) : -1; }
@@ -1439,6 +1458,7 @@ function setAlbum(name, silent){
   CURALBUM = name;
   PHI = 0;
   PH = derivePhotos();
+  PHBAG = []; PHHIST = []; /* the shuffle bag is per-album */
   snapPin();
   SEL.clear();
   renderChips();
@@ -1463,12 +1483,14 @@ function refreshPinBtn(){
   const cur = PH.length ? pinPath(PH[PHI % PH.length]) : null;
   const b = $("phpinbtn");
   /* The bar button is a two-state toggle: with a pin active it
-     reads "Shuffle" and tapping it clears the pin; with no pin it
-     reads "Show only this" and pins the current photo. Every pin
-     change (bar, settings Clear, auto-clear) funnels through here,
-     so the label can never drift from the state. The gold ring
-     still marks "the pinned photo is the one on screen". */
-  b.textContent = PHPIN ? "Shuffle" : "Show only this";
+     reads "Unpin" and tapping it clears the pin; with no pin it
+     reads "Show only this" and pins the current photo. (It read
+     "Shuffle" until v6.11, when Shuffle became the real random-
+     order mode in settings.) Every pin change (bar, settings
+     Clear, auto-clear) funnels through here, so the label can
+     never drift from the state. The gold ring still marks "the
+     pinned photo is the one on screen". */
+  b.textContent = PHPIN ? "Unpin" : "Show only this";
   b.classList.toggle("on", !!PHPIN && cur === PHPIN);
 }
 async function loadPhotos(){
@@ -1497,11 +1519,55 @@ async function loadPhotos(){
   snapPin();
   showPhoto();
 }
+/* Shuffle state: PHBAG holds the album's paths (pin form, no ?v=
+   stamp) not yet shown this round; PHHIST is the trail of shown
+   paths so Prev can walk back through them. Paths, not indexes —
+   the list reloads and re-stamps under us. */
+let PHBAG = [], PHHIST = [];
+function phCurPath(){ return PH.length ? pinPath(PH[PHI % PH.length]) : null; }
+function phRebuildBag(){
+  const cur = phCurPath();
+  PHBAG = PH.map(pinPath).filter(p => p !== cur);
+  for(let i = PHBAG.length - 1; i > 0; i--){
+    const k = Math.floor(Math.random() * (i + 1));
+    const t = PHBAG[i]; PHBAG[i] = PHBAG[k]; PHBAG[k] = t;
+  }
+}
+function phGoTo(path){
+  const i = PH.findIndex(p => pinPath(p) === path);
+  if(i >= 0){ PHI = i; return true; }
+  return false;
+}
 function stepPhoto(d, auto){
   if(!PH.length) return;
   /* Auto-advance always lands back on the pinned photo; manual
      prev/next browsing is never gated by the pin. */
   if(auto && pinIndex() >= 0){ PHI = pinIndex(); showPhoto(); return; }
+  if(PHORDER === "shuffle" && PH.length > 1){
+    if(d > 0){
+      const cur = phCurPath();
+      if(!PHBAG.length) phRebuildBag();
+      /* Draw until a path that still exists (stale ones drop out);
+         the photo being left goes onto the history trail. */
+      while(PHBAG.length){
+        const nxt = PHBAG.pop();
+        if(nxt !== cur && phGoTo(nxt)){
+          PHHIST.push(cur);
+          if(PHHIST.length > 60) PHHIST.shift();
+          showPhoto();
+          return;
+        }
+      }
+    } else {
+      /* Prev walks back through what was actually shown. */
+      const cur = phCurPath();
+      while(PHHIST.length){
+        const prev = PHHIST.pop();
+        if(prev !== cur && phGoTo(prev)){ showPhoto(); return; }
+      }
+    }
+    /* fall through to the sequential step when shuffle can't move */
+  }
   PHI = (PHI + d + PH.length) % PH.length;
   showPhoto();
 }
@@ -1537,6 +1603,15 @@ function renderPhSettings(){
     b.addEventListener("click", () => setRotate(ms));
     wrap.appendChild(b);
   });
+  const ow = $("phordchips");
+  ow.replaceChildren();
+  [["seq", "Sequential"], ["shuffle", "Shuffle"]].forEach(([v, lb]) => {
+    const b = document.createElement("button");
+    b.className = "rotchip" + (PHORDER === v ? " on" : "");
+    b.textContent = lb;
+    b.addEventListener("click", () => setOrder(v));
+    ow.appendChild(b);
+  });
   const row = $("phpinrow");
   if(PHPIN){
     row.classList.add("on");
@@ -1553,6 +1628,13 @@ function setRotate(ms){
   postPhSettings();
   renderPhSettings();
   armPhotoTimer();
+}
+function setOrder(v){
+  PHORDER = v;
+  localStorage.setItem("ph_order", v);
+  PHBAG = []; PHHIST = []; /* a fresh bag for the new order */
+  postPhSettings();
+  renderPhSettings();
 }
 $("phsetbtn").addEventListener("click", () => {
   renderPhSettings();
