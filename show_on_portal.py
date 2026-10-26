@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Push a visual card onto the Portal dashboard (DashServer /api/show).
 
-The card pops over the dashboard on the Portal. It can be a simple
-link card (title + URL) or a rich card whose content — ingredients,
-steps — is listed on the card itself (v2 sections); with sections
-the URL is optional and just rides along as the Open link. Tapping
-Open hands the URL to Chrome on the device via the page's
-portal://open intercept and hides the card locally; only ✕ clears
-it server-side, so the card survives being opened.
+The content takes over the dashboard's full Show page on the
+Portal (v3: a full view, not a pop-up). It can be a simple link
+card (title + URL) or rich content whose sections — ingredients,
+steps — are laid out as full-page columns (v2 sections); with
+sections the URL is optional and just rides along as the Open
+link. Tapping Open hands the URL to Chrome on the device via the
+page's portal://open intercept and the page stays underneath;
+only the page's Done (✕) clears it server-side, so the content
+survives being opened.
 
 Usage:
   python3 show_on_portal.py --title "Fluffy Pancakes" \
