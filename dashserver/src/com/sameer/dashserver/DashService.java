@@ -43,7 +43,7 @@ public class DashService extends Service {
     static final File ROOT = new File("/sdcard/portal-dashboard");
     // Shared secret for the snapshot push (PUT /upload/...). Baked into this
     // personal build; the matching copy lives in Muse's workspace only.
-    static final String TOKEN = "REDACTED-LOCAL-BUILD-ONLY";
+    static final String TOKEN = "4770f3febc9f5ed346c173de8598f701";
     // Only these files may be overwritten by a push.
     static final String[] UPLOADABLE = {
         "/data.json", "/audio/wotd-en.mp3", "/audio/wotd-ur.mp3", "/index.html"
@@ -543,16 +543,23 @@ public class DashService extends Service {
 
     /** Store a Muse-pushed show card (show.json in the served dir;
         the page polls GET /api/show and renders it until the card is
-        opened or dismissed). POSTed only with the upload bearer
-        token — see handleApi. Each POST replaces the current card
-        and re-stamps id/created with the server clock. */
+        dismissed with ✕ or replaced — Open only launches the link
+        and leaves the card in place, so a swallowed launch can never
+        lose it). POSTed only with the upload bearer token — see
+        handleApi. Each POST replaces the current card and re-stamps
+        id/created with the server clock. v2: the url is optional
+        when the card carries sections (ingredients/steps on the
+        card itself). */
     private PortalApi.Result saveShowCard(String body) {
         try {
             org.json.JSONObject req = new org.json.JSONObject(body);
             String title = req.optString("title", "").trim();
             String url = req.optString("url", "").trim();
-            if (title.isEmpty() || title.length() > 200 || url.length() > 1000
-                    || !(url.startsWith("http://") || url.startsWith("https://"))) {
+            boolean urlOk = url.isEmpty() || (url.length() <= 1000
+                    && (url.startsWith("http://") || url.startsWith("https://")));
+            org.json.JSONArray sections = sanitizeSections(req.optJSONArray("sections"));
+            if (title.isEmpty() || title.length() > 200 || !urlOk
+                    || (url.isEmpty() && sections == null)) {
                 return new PortalApi.Result(400, "{\"error\":\"bad card\"}");
             }
             long now = System.currentTimeMillis();
@@ -560,7 +567,8 @@ public class DashService extends Service {
             card.put("id", now);
             card.put("created", now);
             card.put("title", title);
-            card.put("url", url);
+            if (!url.isEmpty()) card.put("url", url);
+            if (sections != null) card.put("sections", sections);
             String sub = req.optString("subtitle", "").trim();
             if (!sub.isEmpty()) card.put("subtitle",
                     sub.length() > 300 ? sub.substring(0, 300) : sub);
@@ -579,6 +587,40 @@ public class DashService extends Service {
                     .put("ok", true).put("id", now).toString());
         } catch (Exception e) {
             return new PortalApi.Result(400, "{\"error\":\"bad card\"}");
+        }
+    }
+
+    /** v2 rich cards: validate a [{heading, lines}] array — at most
+        6 sections, 40 lines per section, heading ≤120 chars, line
+        ≤300 chars (long enough for a full recipe). Returns a
+        sanitized copy, or null when absent, empty, or invalid. */
+    private static org.json.JSONArray sanitizeSections(org.json.JSONArray in) {
+        if (in == null || in.length() == 0 || in.length() > 6) return null;
+        try {
+            org.json.JSONArray out = new org.json.JSONArray();
+            for (int i = 0; i < in.length(); i++) {
+                org.json.JSONObject s = in.optJSONObject(i);
+                if (s == null) return null;
+                String heading = s.optString("heading", "").trim();
+                if (heading.length() > 120) heading = heading.substring(0, 120);
+                org.json.JSONArray linesIn = s.optJSONArray("lines");
+                if (linesIn == null || linesIn.length() == 0 || linesIn.length() > 40) return null;
+                org.json.JSONArray lines = new org.json.JSONArray();
+                for (int j = 0; j < linesIn.length(); j++) {
+                    String line = linesIn.optString(j, "").trim();
+                    if (line.isEmpty()) continue;
+                    if (line.length() > 300) line = line.substring(0, 300);
+                    lines.put(line);
+                }
+                if (lines.length() == 0) return null;
+                org.json.JSONObject sec = new org.json.JSONObject();
+                sec.put("heading", heading);
+                sec.put("lines", lines);
+                out.put(sec);
+            }
+            return out.length() > 0 ? out : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
