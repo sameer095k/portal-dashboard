@@ -396,6 +396,7 @@
   #word .spacer{flex:1}
   #word .urw{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:44px; line-height:1.55; direction:rtl}
   #word .urt{font-size:22px; color:var(--soft); text-align:right; margin-top:-6px}
+  #word .urex{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:29px; line-height:1.8; direction:rtl; text-align:right; margin-top:2px}
   #word .play{
     width:64px; height:64px; border-radius:50%; border:2px solid var(--accent);
     background:transparent; color:var(--accent); font-size:26px; cursor:pointer; flex:none;
@@ -460,6 +461,7 @@
     <div>
       <div class="urw" id="w-ur" lang="ur"></div>
       <div class="urt" id="w-urt"></div>
+      <div class="urex" id="w-ex" lang="ur"></div>
     </div>
     <button class="play" id="play-ur" title="Listen">▶</button>
   </section>
@@ -714,6 +716,8 @@ function render(){
     document.getElementById("word").style.display = "";
     $("w-ur").textContent = DATA.word.ur;
     $("w-urt").textContent = [DATA.word.ur_translit, DATA.word.ur_meaning].filter(Boolean).join(" · ");
+    $("w-ex").textContent = DATA.word.example || "";
+    $("w-ex").style.display = DATA.word.example ? "" : "none";
     $("play-ur").onclick = () => new Audio(DATA.word.audio_ur).play().catch(()=>{});
   } else {
     document.getElementById("word").style.display = "none";
