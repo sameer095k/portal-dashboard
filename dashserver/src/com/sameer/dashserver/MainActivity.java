@@ -3,6 +3,7 @@ package com.sameer.dashserver;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -36,7 +37,8 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                // portal://launch/<package> and portal://apps let the
+                // portal://launch/<package>, portal://apps and
+                // portal://open?url=… let the
                 // dashboard page open real apps natively — Immortal's
                 // curated tiles point at Meta's browser/calling shells,
                 // so the dashboard carries its own doors.
@@ -49,6 +51,23 @@ public class MainActivity extends Activity {
                                     "com.immortal.launcher.HomeActivity");
                             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                             startActivity(i);
+                        } else if (rest.startsWith("open?url=")) {
+                            // portal://open?url=<urlencoded> — show-card
+                            // taps land here: open the link in the real
+                            // Chrome (WebRTC/pages the WebView can't
+                            // carry), default browser as fallback.
+                            String u = java.net.URLDecoder.decode(
+                                    rest.substring("open?url=".length()), "UTF-8");
+                            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+                            i.setPackage("org.chromium.chrome");
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            try {
+                                startActivity(i);
+                            } catch (Exception e) {
+                                Intent j = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+                                j.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                startActivity(j);
+                            }
                         } else if (rest.startsWith("launch/")) {
                             String pkg = rest.substring("launch/".length());
                             Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
