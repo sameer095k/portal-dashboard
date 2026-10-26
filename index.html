@@ -142,6 +142,15 @@
     border:1px solid var(--line); background:transparent; color:var(--ink); flex:none}
   #phsetdone{font-size:23px; padding:12px 30px; border-radius:14px; margin-top:22px;
     border:2px solid var(--gold); background:transparent; color:var(--gold); cursor:pointer}
+  /* Photos immersive: hide the drawer (body.railoff, the rail's own state)
+     and every photo option hides with it — picture only. The › edge tab
+     that brings the drawer back lives outside this view and stays.
+     App mode only, so the screensaver keeps its behavior; edit mode's
+     bars are keyed on .editing and are not touched; the settings sheet,
+     if open, stays up. */
+  body.app.railoff #phview.open:not(.editing) #phbar,
+  body.app.railoff #phview.open:not(.editing) #phchips,
+  body.app.railoff #phview.open:not(.editing) #phnewrow{display:none}
   #grid{
     display:grid; height:100vh; padding:26px; gap:20px;
     grid-template-columns: 370px 1fr;
