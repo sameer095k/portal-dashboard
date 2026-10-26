@@ -73,6 +73,25 @@
     background:var(--ink); color:var(--bg); font-size:23px; padding:13px 26px;
     border-radius:999px; opacity:0; pointer-events:none; transition:opacity .25s}
   #toast.show{opacity:.95}
+  /* ---------- show card (Muse-pushed pop-up) ---------- */
+  #showwrap{position:fixed; inset:0; z-index:120; display:none;
+    align-items:center; justify-content:center; background:rgba(0,0,0,.42)}
+  #showwrap.open{display:flex}
+  #showcard{background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:20px; width:min(680px,88vw); overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  #showimg{display:none; width:100%; aspect-ratio:16/9; object-fit:cover}
+  #showcard.hasimg #showimg{display:block}
+  #showbody{padding:24px 28px 26px}
+  #showtitle{font-size:32px; font-weight:600; line-height:1.25}
+  #showsub{display:none; font-size:23px; color:var(--soft); margin-top:8px; line-height:1.35}
+  #showbtns{display:flex; gap:12px; margin-top:22px; align-items:center}
+  #showopen{font-size:24px; font-weight:600; padding:13px 34px; border-radius:14px;
+    border:2px solid var(--gold); background:var(--gold); color:var(--card);
+    cursor:pointer; text-decoration:none}
+  #showx{margin-left:auto; flex:none; width:52px; height:52px; border-radius:50%;
+    border:1px solid var(--line); background:transparent; color:var(--soft);
+    font-size:22px; cursor:pointer}
   .grr .del{margin-left:auto; flex:none; width:44px; height:44px; border-radius:50%;
     border:1px solid var(--line); background:transparent; color:var(--soft);
     font-size:19px; cursor:pointer; display:none}
@@ -569,6 +588,19 @@
 </section>
 
 <div id="toast"></div>
+<div id="showwrap">
+  <div id="showcard">
+    <img id="showimg" alt="">
+    <div id="showbody">
+      <div id="showtitle"></div>
+      <div id="showsub"></div>
+      <div id="showbtns">
+        <a id="showopen" href="#">Open</a>
+        <button id="showx" title="Dismiss">✕</button>
+      </div>
+    </div>
+  </div>
+</div>
 <audio id="azan" src="azan.mp3" preload="auto"></audio>
 <script>
 "use strict";
@@ -1931,6 +1963,44 @@ setInterval(fetchWord, 1800000);
 setInterval(fetchLive, 600000);
 setInterval(tick, 1000);
 tick();
+
+/* ---- show card: Muse can push a visual card (a recipe, a
+        video, a link) that pops over the dashboard. The server
+        holds it (/api/show); both faces render it, the app face
+        takes the taps. Open and ✕ clear it server-side, so a
+        dismissed card never comes back; a card that is still up
+        after a page reload simply shows again. ---- */
+let SHOW_ID = null;
+function renderShow(j){
+  $("showtitle").textContent = j.title || "";
+  const sub = $("showsub");
+  if(j.subtitle){ sub.textContent = j.subtitle; sub.style.display = "block"; }
+  else sub.style.display = "none";
+  const card = $("showcard");
+  if(j.image){ $("showimg").src = j.image; card.classList.add("hasimg"); }
+  else { $("showimg").removeAttribute("src"); card.classList.remove("hasimg"); }
+  $("showopen").href = "portal://open?url=" + encodeURIComponent(j.url || "");
+  $("showwrap").classList.add("open");
+}
+function hideShow(){ $("showwrap").classList.remove("open"); }
+async function dismissShow(){
+  hideShow();
+  try{ await fetch("/api/show/clear", {method:"POST"}); }catch(e){}
+}
+async function pollShow(){
+  try{
+    const r = await fetch("/api/show", {cache:"no-store"});
+    if(!r.ok) return;
+    const j = await r.json();
+    if(j && j.id){
+      if(j.id !== SHOW_ID){ SHOW_ID = j.id; renderShow(j); }
+    } else if(SHOW_ID !== null){ SHOW_ID = null; hideShow(); }
+  }catch(e){ /* server hiccup — current state stays */ }
+}
+$("showopen").addEventListener("click", () => { dismissShow(); });
+$("showx").addEventListener("click", () => { dismissShow(); });
+pollShow();
+setInterval(pollShow, 5000);
 </script>
 <script>
 /* rail calendar icon shows today's date */
