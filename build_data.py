@@ -126,20 +126,83 @@ def wmo_label(code):
 
 
 def get_weather():
+    # Full forecast object — the same shape the page builds from its own
+    # live fetch — so the snapshot fallback renders the weather view
+    # complete (hours/days/tiles), not just the home-screen header.
     url = (
         "https://api.open-meteo.com/v1/forecast?latitude=34.0009&longitude=-117.8291"
-        "&current=temperature_2m,weather_code"
-        "&daily=temperature_2m_max,temperature_2m_min,weather_code"
-        "&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles&forecast_days=2"
+        "&current=temperature_2m,weather_code,apparent_temperature,"
+        "relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+        "&hourly=temperature_2m,weather_code,precipitation_probability,"
+        "visibility,is_day"
+        "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,"
+        "sunset,uv_index_max,precipitation_probability_max,precipitation_sum"
+        "&temperature_unit=fahrenheit&wind_speed_unit=mph"
+        "&timezone=America%2FLos_Angeles&forecast_days=10"
     )
     d = http_json(url)
-    cur = d["current"]
-    daily = d["daily"]
+    cur, hourly, daily = d["current"], d["hourly"], d["daily"]
+    now = datetime.now(LOCAL_TZ)
+    hi0 = 0
+    for i, t in enumerate(hourly["time"]):
+        dt = datetime.fromisoformat(t)
+        if dt.date() == now.date() and dt.hour == now.hour:
+            hi0 = i
+            break
+    pop_h = hourly.get("precipitation_probability")
+    is_day = hourly.get("is_day")
+    hours = []
+    for i in range(hi0, min(hi0 + 25, len(hourly["time"]))):
+        dt = datetime.fromisoformat(hourly["time"][i])
+        h12 = dt.hour % 12 or 12
+        hours.append({
+            "t": "Now" if i == hi0 else
+                 f"{h12}{'PM' if dt.hour >= 12 else 'AM'}",
+            "f": round(hourly["temperature_2m"][i]),
+            "code": hourly["weather_code"][i],
+            "night": (not is_day[i]) if is_day else False,
+            "pop": pop_h[i] if pop_h else None,
+        })
+    pop_d = daily.get("precipitation_probability_max")
+    days = []
+    for i, t in enumerate(daily["time"]):
+        dt = datetime.fromisoformat(t + "T12:00:00")
+        days.append({
+            "d": "Today" if i == 0 else dt.strftime("%a"),
+            "code": daily["weather_code"][i],
+            "label": wmo_label(daily["weather_code"][i]),
+            "hi": round(daily["temperature_2m_max"][i]),
+            "lo": round(daily["temperature_2m_min"][i]),
+            "pop": pop_d[i] if pop_d else None,
+        })
+
+    def fmt_t(s):
+        dt = datetime.fromisoformat(s)
+        h12 = dt.hour % 12 or 12
+        return f"{h12}:{dt.minute:02d} {'PM' if dt.hour >= 12 else 'AM'}"
+
+    vis = hourly.get("visibility")
     return {
         "now_f": round(cur["temperature_2m"]),
         "label": wmo_label(cur["weather_code"]),
+        "code": cur["weather_code"],
+        "feels": round(cur["apparent_temperature"]),
+        "hum": round(cur["relative_humidity_2m"]),
+        "wind": round(cur["wind_speed_10m"]),
+        "windDir": round(cur["wind_direction_10m"]),
+        "gust": round(cur["wind_gusts_10m"]),
+        "visMi": round(vis[hi0] / 1609.34)
+                 if vis and vis[hi0] is not None else None,
+        "uv": round(daily["uv_index_max"][0] * 10) / 10
+              if daily.get("uv_index_max") else None,
+        "sunrise": fmt_t(daily["sunrise"][0]),
+        "sunset": fmt_t(daily["sunset"][0]),
+        "precipIn": round(daily["precipitation_sum"][0] / 25.4 * 100) / 100
+                    if daily.get("precipitation_sum") else None,
         "hi": round(daily["temperature_2m_max"][0]),
         "lo": round(daily["temperature_2m_min"][0]),
+        "hours": hours,
+        "days": days,
     }
 
 

@@ -121,6 +121,27 @@
   #pheditbar button, #pheditbar select{font-size:22px; padding:12px 20px; border-radius:12px;
     cursor:pointer; border:1px solid #888; background:rgba(20,20,20,.65); color:#eee}
   #phselinfo{color:#eee; font-size:22px; margin-right:auto}
+  #phpinbtn.on{border-color:var(--gold); color:var(--gold)}
+  #phsetbtn{margin-left:auto; flex:none}
+  #phset{position:absolute; inset:0; display:none; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.45); z-index:7}
+  #phset.open{display:flex}
+  .phset-card{background:var(--bg); color:var(--ink); border-radius:20px;
+    padding:26px; width:min(560px,92%)}
+  .phset-k{font-size:17px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--soft); margin-bottom:12px}
+  #phrotchips{display:flex; gap:10px; flex-wrap:wrap}
+  .rotchip{font-size:21px; padding:9px 18px; border-radius:999px; cursor:pointer;
+    border:2px solid var(--line); background:transparent; color:var(--ink)}
+  .rotchip.on{border-color:var(--gold); color:var(--gold)}
+  #phpinrow{display:none; align-items:center; gap:14px; margin-top:22px}
+  #phpinrow.on{display:flex}
+  #phpinrow img{width:84px; height:64px; object-fit:cover; border-radius:10px; flex:none}
+  #phpinname{font-size:22px; flex:1; min-width:0; word-break:break-all}
+  #phpinclear{font-size:21px; padding:10px 20px; border-radius:12px; cursor:pointer;
+    border:1px solid var(--line); background:transparent; color:var(--ink); flex:none}
+  #phsetdone{font-size:23px; padding:12px 30px; border-radius:14px; margin-top:22px;
+    border:2px solid var(--gold); background:transparent; color:var(--gold); cursor:pointer}
   #grid{
     display:grid; height:100vh; padding:26px; gap:20px;
     grid-template-columns: 370px 1fr;
@@ -148,6 +169,9 @@
   #wxnow{font-size:32px; margin:6px 0 20px; display:flex; align-items:baseline; gap:18px; flex-wrap:wrap}
   #wxnow b{font-size:88px; font-weight:200}
   #wxnow .sub{color:var(--soft); font-size:26px}
+  #wxstatus{display:none; font-size:24px; color:var(--soft); margin:2px 0 18px}
+  #wxview.wx-partial #wxstatus{display:block}
+  #wxview.wx-partial .wxdetail, #wxview.wx-partial #wxtiles{display:none}
   .wxcard{background:var(--card); border:1px solid var(--line); border-radius:18px;
     padding:16px 20px; margin-bottom:16px}
   .wxch{font-size:17px; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin-bottom:12px}
@@ -380,8 +404,9 @@
   <button class="x" data-close="wxview">✕</button>
   <div id="wxalert"></div>
   <div id="wxnow"></div>
-  <div class="wxcard"><div class="wxch">Hourly</div><div id="wxhours"></div></div>
-  <div class="wxcard"><div class="wxch">10-Day</div><div id="wxdays"></div></div>
+  <div id="wxstatus"></div>
+  <div class="wxcard wxdetail"><div class="wxch">Hourly</div><div id="wxhours"></div></div>
+  <div class="wxcard wxdetail"><div class="wxch">10-Day</div><div id="wxdays"></div></div>
   <div id="wxtiles"></div>
   <div class="wxcard"><div class="wxch">Radar · Diamond Bar</div><div id="wxradar"></div></div>
   <a id="wxbreezy" href="portal://launch/org.breezyweather">Open in Breezy Weather →</a>
@@ -468,7 +493,9 @@
     <button id="phnext">Next ›</button>
     <button id="phaddbtn">Add photos</button>
     <button id="pheditbtn">Edit</button>
+    <button id="phpinbtn">Show only this</button>
     <span id="phup"></span>
+    <button id="phsetbtn" title="Photo settings">⚙</button>
   </div>
   <div id="pheditbar">
     <span id="phselinfo"></span>
@@ -476,6 +503,18 @@
     <button id="phmove-btn">Add to</button>
     <button id="phdel-btn">Delete</button>
     <button id="phdone-btn">Done</button>
+  </div>
+  <div id="phset">
+    <div class="phset-card">
+      <div class="phset-k">Rotate</div>
+      <div id="phrotchips"></div>
+      <div id="phpinrow">
+        <img id="phpinthumb" alt="">
+        <span id="phpinname"></span>
+        <button id="phpinclear">Clear</button>
+      </div>
+      <button id="phsetdone">Done</button>
+    </div>
   </div>
 </section>
 
@@ -616,6 +655,8 @@ const WMO = [[0,"Clear"],[2,"Partly cloudy"],[3,"Overcast"],[48,"Fog"],[67,"Rain
 function wmoLabel(c){ let out = "—"; for(const [max,label] of WMO){ if(c <= max){ out = label; break; } } return out; }
 
 async function fetchLive(){
+  if(LIVE_FETCHING) return;
+  LIVE_FETCHING = true;
   const live = {};
   try{
     const [ri, rc] = await Promise.all([
@@ -624,8 +665,10 @@ async function fetchLive(){
     ]);
     if(ri.ok && rc.ok) live.prayer = shapePrayer(await ri.json(), await rc.json());
   }catch(e){ /* fall back to snapshot */ }
+  WX_KICK_AT = Date.now();
   try{
     const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=34.0009&longitude=-117.8291&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation_probability,visibility,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,precipitation_sum&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=10", {cache:"no-store"});
+    if(!r.ok) WX_LIVE = "fail";
     if(r.ok){
       const w = await r.json();
       const nowH = new Date().getHours();
@@ -674,10 +717,13 @@ async function fetchLive(){
                          ? Math.round(w.daily.precipitation_sum[0] / 25.4 * 100) / 100 : null,
                        hi: Math.round(w.daily.temperature_2m_max[0]), lo: Math.round(w.daily.temperature_2m_min[0]),
                        hours, days };
+      WX_LIVE = "ok";
     }
-  }catch(e){ /* fall back to snapshot */ }
+  }catch(e){ WX_LIVE = "fail"; /* fall back to snapshot */ }
   loadAlerts();
+  LIVE_FETCHING = false;
   if(live.prayer || live.weather) merge(live);
+  else if($("wxview").classList.contains("open")) renderWeatherView();
 }
 function merge(live){
   const base = SNAP || {};
@@ -692,6 +738,7 @@ function merge(live){
   };
   document.getElementById("word").style.display = DATA.word ? "" : "none";
   render();
+  if($("wxview").classList.contains("open")) renderWeatherView();
 }
 async function loadSnap(){
   try{
@@ -703,6 +750,17 @@ async function loadSnap(){
 /* ---- full-screen views (tap targets in the interactive app) ---- */
 function stripAP(t){ return t ? t.replace(/\s?[AP]M/i,"") : ""; }
 let WXALERT = [];
+/* Weather detail state: the snapshot's weather is home-screen-only
+   (now/label/hi/lo) — hours/days/tiles exist only on the live object.
+   wxFull() is the shape check that keeps a partial object from ever
+   rendering as a complete forecast. */
+let WX_LIVE = "";        /* "" = no live attempt yet, "ok", "fail" */
+let WX_KICK_AT = 0;      /* last live weather attempt (ms) — re-kick throttle */
+let LIVE_FETCHING = false;
+function wxFull(w){
+  return !!(w && Array.isArray(w.hours) && w.hours.length &&
+            Array.isArray(w.days) && w.days.length);
+}
 async function loadAlerts(){
   try{
     const r = await fetch("https://api.weather.gov/alerts/active?point=34.0009,-117.8291",
@@ -733,10 +791,25 @@ function tempHue(f){
 }
 function renderWeatherView(){
   const w = DATA && DATA.weather;
-  if(!w) return;
   const al = $("wxalert");
   if(WXALERT.length){ al.textContent = "⚠ " + WXALERT[0]; al.className = "on"; }
   else { al.textContent = ""; al.className = ""; }
+  if(!wxFull(w)){
+    /* Partial (snapshot-only) or missing weather: never render the detail
+       sections empty. Header still shows what we have, one status line
+       explains the rest, and a live fetch is kicked (throttled) so the
+       full forecast fills in when it lands — merge() re-renders us. */
+    $("wxview").classList.add("wx-partial");
+    if(w) $("wxnow").innerHTML = "<b>" + w.now_f + "°</b><span>" + w.label + "</span>" +
+      '<span class="sub">H ' + w.hi + "° · L " + w.lo + "°</span>";
+    $("wxstatus").textContent = (WX_LIVE === "fail" && !LIVE_FETCHING)
+      ? "Couldn't load the full forecast — showing the latest saved weather."
+      : "Loading the full forecast…";
+    if(!LIVE_FETCHING && Date.now() - WX_KICK_AT > 60000) fetchLive();
+    buildRadar();
+    return;
+  }
+  $("wxview").classList.remove("wx-partial");
   $("wxnow").innerHTML = "<b>" + w.now_f + "°</b><span>" + w.label + "</span>" +
     '<span class="sub">H ' + w.hi + "° · L " + w.lo + "°</span>";
   $("wxhours").innerHTML = (w.hours || []).map(h =>
@@ -884,6 +957,7 @@ async function syncViewState(){
       CURALBUM = j.album;
       PHI = 0;
       PH = derivePhotos();
+      snapPin();
       SEL.clear();
       renderChips();
       showPhoto();
@@ -1083,6 +1157,19 @@ function toast(msg){
 let ALBUMS = [], CURALBUM = "All", PH = [], PHI = 0, PHT = null;
 let PHEDIT = false;
 const SEL = new Set();
+/* ---- photo settings: rotate speed + a single-photo pin, both in
+        localStorage. The app and screensaver faces share this origin,
+        so one pin gates the rotation on both. The pin stores the
+        path without its ?v= version stamp. ---- */
+const PH_ROT_MS = [10000, 30000, 60000, 300000, 0];
+const PH_ROT_LB = ["10s", "30s", "1 min", "5 min", "Off"];
+let PHROT = parseInt(localStorage.getItem("ph_rotate_ms"), 10);
+if(!PH_ROT_MS.includes(PHROT)) PHROT = 30000;
+let PHPIN = localStorage.getItem("ph_pin") || null;
+let PHON = false;
+function pinPath(p){ return p ? p.split("?")[0] : p; }
+function pinIndex(){ return PHPIN ? PH.findIndex(p => pinPath(p) === PHPIN) : -1; }
+function snapPin(){ const i = pinIndex(); if(i >= 0) PHI = i; }
 function derivePhotos(){
   if(CURALBUM === "All") return ALBUMS.flatMap(a => a.photos);
   const a = ALBUMS.find(x => x.name === CURALBUM);
@@ -1117,6 +1204,7 @@ function setAlbum(name, silent){
   CURALBUM = name;
   PHI = 0;
   PH = derivePhotos();
+  snapPin();
   SEL.clear();
   renderChips();
   showPhoto();
@@ -1128,11 +1216,17 @@ function showPhoto(){
   if(!PH.length){
     img.style.display = "none";
     $("phempty").style.display = "flex";
+    refreshPinBtn();
     return;
   }
   $("phempty").style.display = "none";
   img.style.display = "block";
   img.src = PH[PHI % PH.length];
+  refreshPinBtn();
+}
+function refreshPinBtn(){
+  const cur = PH.length ? pinPath(PH[PHI % PH.length]) : null;
+  $("phpinbtn").classList.toggle("on", !!PHPIN && cur === PHPIN);
 }
 async function loadPhotos(){
   try{
@@ -1140,6 +1234,12 @@ async function loadPhotos(){
     if(r.ok){
       const j = await r.json();
       const fresh = j.albums || [];
+      if(PHPIN && !fresh.some(a => (a.photos || []).some(p => pinPath(p) === PHPIN))){
+        PHPIN = null;
+        localStorage.removeItem("ph_pin");
+        renderPhSettings();
+        refreshPinBtn();
+      }
       if(JSON.stringify(fresh) !== JSON.stringify(ALBUMS)){
         ALBUMS = fresh;
         if(CURALBUM !== "All" && !ALBUMS.some(a => a.name === CURALBUM)) CURALBUM = "All";
@@ -1150,18 +1250,29 @@ async function loadPhotos(){
       }
     }
   }catch(e){ /* keep what we have */ }
+  snapPin();
   showPhoto();
 }
-function stepPhoto(d){
+function stepPhoto(d, auto){
   if(!PH.length) return;
+  /* Auto-advance always lands back on the pinned photo; manual
+     prev/next browsing is never gated by the pin. */
+  if(auto && pinIndex() >= 0){ PHI = pinIndex(); showPhoto(); return; }
   PHI = (PHI + d + PH.length) % PH.length;
   showPhoto();
 }
+function armPhotoTimer(){
+  if(PHT){ clearInterval(PHT); PHT = null; }
+  if(PHON && PHROT > 0)
+    PHT = setInterval(() => { stepPhoto(1, true); loadPhotos(); }, PHROT);
+}
 function startPhotos(){
+  PHON = true;
   loadPhotos();
-  if(!PHT) PHT = setInterval(() => { stepPhoto(1); loadPhotos(); }, 30000);
+  armPhotoTimer();
 }
 function stopPhotos(){
+  PHON = false;
   if(PHT){ clearInterval(PHT); PHT = null; }
 }
 $("phimg").addEventListener("error", () => {
@@ -1170,6 +1281,55 @@ $("phimg").addEventListener("error", () => {
 });
 $("phprev").addEventListener("click", () => stepPhoto(-1));
 $("phnext").addEventListener("click", () => stepPhoto(1));
+
+/* ---- photo settings panel: rotate chips + the pinned photo ---- */
+function renderPhSettings(){
+  const wrap = $("phrotchips");
+  wrap.replaceChildren();
+  PH_ROT_MS.forEach((ms, i) => {
+    const b = document.createElement("button");
+    b.className = "rotchip" + (PHROT === ms ? " on" : "");
+    b.textContent = PH_ROT_LB[i];
+    b.addEventListener("click", () => setRotate(ms));
+    wrap.appendChild(b);
+  });
+  const row = $("phpinrow");
+  if(PHPIN){
+    row.classList.add("on");
+    const th = $("phpinthumb");
+    th.style.display = "";
+    th.onerror = () => { th.style.display = "none"; };
+    th.src = "/thumb/" + PHPIN;
+    $("phpinname").textContent = PHPIN.split("/").pop();
+  } else row.classList.remove("on");
+}
+function setRotate(ms){
+  PHROT = ms;
+  localStorage.setItem("ph_rotate_ms", String(ms));
+  renderPhSettings();
+  armPhotoTimer();
+}
+$("phsetbtn").addEventListener("click", () => {
+  renderPhSettings();
+  $("phset").classList.add("open");
+});
+$("phsetdone").addEventListener("click", () => $("phset").classList.remove("open"));
+$("phpinbtn").addEventListener("click", () => {
+  if(!PH.length) return;
+  PHPIN = pinPath(PH[PHI % PH.length]);
+  localStorage.setItem("ph_pin", PHPIN);
+  renderPhSettings();
+  refreshPinBtn();
+  toast("Showing only this photo");
+});
+$("phpinclear").addEventListener("click", () => {
+  PHPIN = null;
+  localStorage.removeItem("ph_pin");
+  renderPhSettings();
+  refreshPinBtn();
+  toast("Showing all photos");
+});
+renderPhSettings();
 $("phaddbtn").addEventListener("click", async () => {
   const el = $("phup");
   el.textContent = "Opening…";
