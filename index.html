@@ -389,14 +389,15 @@
   /* ---------- word band ---------- */
   #word{
     grid-area:word; background:var(--card); border:1px solid var(--line); border-radius:16px;
-    display:flex; align-items:center; gap:34px; padding:10px 30px;
+    display:flex; align-items:center; gap:30px; padding:12px 30px;
   }
-  #word .enw{font-size:42px; font-weight:600}
-  #word .end{font-size:23px; color:var(--soft); margin-top:2px}
-  #word .spacer{flex:1}
-  #word .urw{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:44px; line-height:1.55; direction:rtl}
-  #word .urt{font-size:22px; color:var(--soft); text-align:right; margin-top:-6px}
-  #word .urex{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:29px; line-height:1.8; direction:rtl; text-align:right; margin-top:2px}
+  #word .lines{flex:1; min-width:0}
+  #word .enex{font-size:27px; line-height:1.35}
+  #word .urex{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:30px; line-height:1.8; direction:rtl; text-align:right; margin-top:2px}
+  #word .hl{color:var(--accent); font-weight:700}
+  #word .wfb{flex:1; min-width:0}
+  #word .wfb .urw{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic",serif; font-size:44px; line-height:1.55; direction:rtl; text-align:right}
+  #word .wfb .urt{font-size:22px; color:var(--soft); text-align:right; margin-top:-6px}
   #word .play{
     width:64px; height:64px; border-radius:50%; border:2px solid var(--accent);
     background:transparent; color:var(--accent); font-size:26px; cursor:pointer; flex:none;
@@ -457,11 +458,13 @@
   </section>
 
   <section id="word">
-    <div class="spacer"></div>
-    <div>
+    <div class="lines" id="w-lines">
+      <div class="enex" id="w-en"></div>
+      <div class="urex" id="w-ex" lang="ur"></div>
+    </div>
+    <div class="wfb" id="w-fb" style="display:none">
       <div class="urw" id="w-ur" lang="ur"></div>
       <div class="urt" id="w-urt"></div>
-      <div class="urex" id="w-ex" lang="ur"></div>
     </div>
     <button class="play" id="play-ur" title="Listen">▶</button>
   </section>
@@ -685,6 +688,44 @@ function tick(){
   }
 }
 
+const escHtml = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+/* Wrap the day's word in a gold span inside its example sentence.
+   Urdu inflects the final letter (غصہ -> غصے), so match on the stem:
+   strip trailing inflection letters and sentence punctuation first. */
+function highlightUrdu(sentence, word){
+  if(!word) return escHtml(sentence);
+  const tails = "ےہایٹڈں";
+  const norm = w => {
+    w = w.replace(/[۔.,!?؟؛:]+$/, "");
+    while(w.length > 2 && tails.indexOf(w.charAt(w.length - 1)) >= 0) w = w.slice(0, -1);
+    return w;
+  };
+  const nw = norm(word);
+  const toks = sentence.split(" ");
+  let best = -1, bestScore = 0;
+  toks.forEach((t, i) => {
+    const nt = norm(t);
+    let score = 0;
+    if(nt === nw) score = 3;
+    else if(nt.indexOf(nw) === 0 || nw.indexOf(nt) === 0) score = 2;
+    else {
+      let p = 0;
+      while(p < Math.min(nt.length, nw.length) && nt.charAt(p) === nw.charAt(p)) p++;
+      if(p >= 2 && p >= nw.length - 1) score = 1;
+    }
+    if(score > bestScore){ bestScore = score; best = i; }
+  });
+  return toks.map((t, i) => i === best ? '<span class="hl">' + escHtml(t) + "</span>" : escHtml(t)).join(" ");
+}
+function highlightEnglish(sentence, meaning){
+  if(!meaning) return escHtml(sentence);
+  const term = meaning.split(/[,;\/]/)[0].trim();
+  if(!term) return escHtml(sentence);
+  const rx = new RegExp("\\b" + term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+  const m = sentence.match(rx);
+  if(!m) return escHtml(sentence);
+  return escHtml(sentence.slice(0, m.index)) + '<span class="hl">' + escHtml(m[0]) + "</span>" + escHtml(sentence.slice(m.index + m[0].length));
+}
 function render(){
   if(!DATA) return;
   if(DATA.weather){
@@ -714,11 +755,24 @@ function render(){
   }
   if(DATA.word){
     document.getElementById("word").style.display = "";
-    $("w-ur").textContent = DATA.word.ur;
-    $("w-urt").textContent = [DATA.word.ur_translit, DATA.word.ur_meaning].filter(Boolean).join(" · ");
-    $("w-ex").textContent = DATA.word.example || "";
-    $("w-ex").style.display = DATA.word.example ? "" : "none";
-    $("play-ur").onclick = () => new Audio(DATA.word.audio_ur).play().catch(()=>{});
+    const W = DATA.word;
+    $("play-ur").onclick = () => new Audio(W.audio_ur).play().catch(()=>{});
+    if(W.example){
+      $("w-lines").style.display = "";
+      $("w-fb").style.display = "none";
+      $("w-ex").innerHTML = highlightUrdu(W.example, W.ur);
+      if(W.example_meaning){
+        $("w-en").style.display = "";
+        $("w-en").innerHTML = highlightEnglish(W.example_meaning, W.ur_meaning);
+      } else {
+        $("w-en").style.display = "none";
+      }
+    } else {
+      $("w-lines").style.display = "none";
+      $("w-fb").style.display = "";
+      $("w-ur").textContent = W.ur;
+      $("w-urt").textContent = [W.ur_translit, W.ur_meaning].filter(Boolean).join(" · ");
+    }
   } else {
     document.getElementById("word").style.display = "none";
   }
