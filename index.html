@@ -92,6 +92,22 @@
   #showx{margin-left:auto; flex:none; width:52px; height:52px; border-radius:50%;
     border:1px solid var(--line); background:transparent; color:var(--soft);
     font-size:22px; cursor:pointer}
+  /* rich card (v2 sections): a taller sheet — smaller thumb, the
+     content scrolls, Open stays pinned at the bottom, ✕ top-right */
+  #showsecs{display:none}
+  #showcard.rich{display:flex; flex-direction:column; max-height:88vh; position:relative}
+  #showcard.rich #showimg{flex:none; height:170px; aspect-ratio:auto}
+  #showcard.rich #showbody{display:flex; flex-direction:column; flex:1; min-height:0}
+  #showcard.rich #showsecs{display:block; overflow-y:auto; min-height:0;
+    margin-top:16px; padding-right:6px; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y}
+  .showsec-h{font-size:20px; font-weight:600; letter-spacing:1.6px;
+    text-transform:uppercase; color:var(--soft); margin:18px 0 8px}
+  .showsec-h:first-child{margin-top:0}
+  .showsec-l{font-size:24px; line-height:1.4; padding:3px 0}
+  #showcard.rich #showbtns{flex:none}
+  #showcard.rich #showx{position:absolute; top:12px; right:12px; margin:0;
+    background:var(--card)}
   .grr .del{margin-left:auto; flex:none; width:44px; height:44px; border-radius:50%;
     border:1px solid var(--line); background:transparent; color:var(--soft);
     font-size:19px; cursor:pointer; display:none}
@@ -594,6 +610,7 @@
     <div id="showbody">
       <div id="showtitle"></div>
       <div id="showsub"></div>
+      <div id="showsecs"></div>
       <div id="showbtns">
         <a id="showopen" href="#">Open</a>
         <button id="showx" title="Dismiss">✕</button>
@@ -1967,10 +1984,16 @@ tick();
 /* ---- show card: Muse can push a visual card (a recipe, a
         video, a link) that pops over the dashboard. The server
         holds it (/api/show); both faces render it, the app face
-        takes the taps. Open and ✕ clear it server-side, so a
-        dismissed card never comes back; a card that is still up
-        after a page reload simply shows again. ---- */
-let SHOW_ID = null;
+        takes the taps. Open launches the link and hides the card
+        locally ONLY — the server keeps it, so a swallowed launch
+        loses nothing and the card is still there when he comes
+        back (re-open or ✕). Only ✕ clears it server-side. The
+        opened id is remembered for this page session so the poll
+        doesn't instantly re-show it; a fresh page load shows a
+        still-standing card again. v2: a card may carry sections
+        (ingredients, steps) rendered on the card itself, and the
+        url is then optional. ---- */
+let SHOW_ID = null, SHOW_OPENED_ID = null;
 function renderShow(j){
   $("showtitle").textContent = j.title || "";
   const sub = $("showsub");
@@ -1979,7 +2002,27 @@ function renderShow(j){
   const card = $("showcard");
   if(j.image){ $("showimg").src = j.image; card.classList.add("hasimg"); }
   else { $("showimg").removeAttribute("src"); card.classList.remove("hasimg"); }
-  $("showopen").href = "portal://open?url=" + encodeURIComponent(j.url || "");
+  const secs = $("showsecs");
+  secs.innerHTML = "";
+  const hasSecs = Array.isArray(j.sections) && j.sections.length > 0;
+  if(hasSecs){
+    j.sections.forEach(s => {
+      if(s.heading){
+        const h = document.createElement("div");
+        h.className = "showsec-h"; h.textContent = s.heading;
+        secs.appendChild(h);
+      }
+      (s.lines || []).forEach(line => {
+        const d = document.createElement("div");
+        d.className = "showsec-l"; d.textContent = line;
+        secs.appendChild(d);
+      });
+    });
+  }
+  card.classList.toggle("rich", hasSecs);
+  const open = $("showopen");
+  if(j.url){ open.style.display = ""; open.href = "portal://open?url=" + encodeURIComponent(j.url); }
+  else open.style.display = "none";
   $("showwrap").classList.add("open");
 }
 function hideShow(){ $("showwrap").classList.remove("open"); }
@@ -1993,12 +2036,34 @@ async function pollShow(){
     if(!r.ok) return;
     const j = await r.json();
     if(j && j.id){
-      if(j.id !== SHOW_ID){ SHOW_ID = j.id; renderShow(j); }
-    } else if(SHOW_ID !== null){ SHOW_ID = null; hideShow(); }
+      if(j.id !== SHOW_ID){
+        SHOW_ID = j.id;
+        if(j.id !== SHOW_OPENED_ID) renderShow(j);
+      }
+    } else if(SHOW_ID !== null){ SHOW_ID = null; SHOW_OPENED_ID = null; hideShow(); }
   }catch(e){ /* server hiccup — current state stays */ }
 }
-$("showopen").addEventListener("click", () => { dismissShow(); });
+$("showopen").addEventListener("click", () => {
+  SHOW_OPENED_ID = SHOW_ID;
+  hideShow();
+});
 $("showx").addEventListener("click", () => { dismissShow(); });
+/* Coming BACK to the dashboard (from Chrome, the screensaver, or
+   another app) is the moment an opened-but-not-dismissed card
+   should be standing there again — the poll deliberately won't
+   re-show it mid-session, so the return transition does. */
+async function reshowOpened(){
+  if(SHOW_OPENED_ID === null) return;
+  try{
+    const r = await fetch("/api/show", {cache:"no-store"});
+    if(!r.ok) return;
+    const j = await r.json();
+    if(j && j.id && j.id === SHOW_OPENED_ID){ SHOW_ID = j.id; renderShow(j); }
+  }catch(e){ /* server hiccup — nothing to reshow */ }
+}
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") reshowOpened();
+});
 pollShow();
 setInterval(pollShow, 5000);
 </script>
