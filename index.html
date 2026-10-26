@@ -227,7 +227,6 @@
   .vh{font-size:24px; letter-spacing:2.5px; text-transform:uppercase; color:var(--soft); margin:14px 0 12px}
   .grr{display:flex; align-items:center; gap:16px; background:var(--card); border:1px solid var(--line);
     border-radius:16px; padding:16px 22px; margin-bottom:10px; font-size:30px}
-  .grr.bought{background:rgba(76,175,80,.28); color:var(--soft); text-decoration:line-through}
   #grview.live .grr{cursor:pointer}
   #gradd{display:none; gap:12px; margin-top:16px}
   #grview.live #gradd{display:flex}
@@ -375,7 +374,7 @@
   <button class="rbtn" data-nav="home" title="Home">⌂</button>
   <button class="rbtn" data-nav="prayer" title="Prayer">☪</button>
   <button class="rbtn" data-nav="weather" title="Weather">☀</button>
-  <button class="rbtn" data-nav="groceries" title="Groceries">🛒</button>
+  <button class="rbtn" data-nav="groceries" title="Groceries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h2.2l2.5 11.2a1.8 1.8 0 0 0 1.8 1.4h7.9a1.8 1.8 0 0 0 1.8-1.4L20.5 8H6"/><circle cx="10" cy="20.4" r="1.5"/><circle cx="17.5" cy="20.4" r="1.5"/></svg></button>
   <button class="rbtn" data-nav="calendar" title="Calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18"/><path d="M8 3v4M16 3v4"/><text id="calday" x="12" y="18.4" text-anchor="middle" font-size="8.5" font-weight="700" fill="currentColor" stroke="none">25</text></svg></button>
   <button class="rbtn" data-nav="photos" title="Photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.6" cy="9.6" r="1.7"/><path d="M4.8 17.6 10 12.2l3.1 3 2.7-2.5 3.4 3.4"/></svg></button>
   <div class="sp"></div>
@@ -935,7 +934,7 @@ function showView(name){
   if(panel){
     if(panel === "wxview") renderWeatherView();
     if(panel === "prview") renderPrayerView();
-    if(panel === "grview"){ refreshGrocery(); refreshUsuals(); }
+    if(panel === "grview"){ paintGroceryCached(); refreshGrocery(); refreshUsuals(); }
     if(panel === "calview") loadCalendar();
     if(panel === "phview") startPhotos(); else stopPhotos();
     $(panel).classList.add("open");
@@ -976,12 +975,43 @@ async function syncViewState(){
 }
 
 /* ---- grocery view: live from the sheet via the on-device Google key
-        when present (tap = green the cell, like Sameer's sheet marks);
-        otherwise read-only from the snapshot. ---- */
+        when present; otherwise read-only from the snapshot. A tap on
+        an item means "got it": the server clears the item's cell on
+        the sheet (value and any fill) and it leaves the list — there
+        is no marked/bought state. The view opens on the last fetched
+        list (localStorage) and refreshes silently — no loading
+        state; a failed refresh just keeps what's on screen. ---- */
 let GR_LIVE = false, GR_NOW = [];
+const GR_CACHE_KEY = "gr_cache_v1";
+function grCache(){
+  try{ return JSON.parse(localStorage.getItem(GR_CACHE_KEY)) || null; }
+  catch(e){ return null; }
+}
+function grCacheSave(patch){
+  try{
+    const c = grCache() || {};
+    Object.assign(c, patch);
+    localStorage.setItem(GR_CACHE_KEY, JSON.stringify(c));
+  }catch(e){ /* best-effort: a blocked/full store just skips the cache */ }
+}
+function paintGroceryCached(){
+  const c = grCache();
+  if(c && Array.isArray(c.now)){
+    GR_LIVE = true;
+    GR_NOW = c.now;
+    $("grview").classList.add("live");
+    $("grnow").replaceChildren(...GR_NOW.map(x => grRow(x, "A")));
+  } else {
+    GR_LIVE = false;
+    const snap = (DATA && DATA.grocery) || {now:[]};
+    $("grnow").replaceChildren(...(snap.now || []).map(t => grRow({item:t}, "A")));
+  }
+  if(c && Array.isArray(c.cats)) USUALS = c.cats;
+  renderUsuals();
+}
 function grRow(x, col){
   const d = document.createElement("div");
-  d.className = "grr" + (x.bought ? " bought" : "");
+  d.className = "grr";
   const label = document.createElement("span");
   label.textContent = x.item;
   d.appendChild(label);
@@ -989,9 +1019,9 @@ function grRow(x, col){
     d.addEventListener("click", async () => {
       d.style.opacity = ".5";
       try{
-        const r = await fetch("/api/grocery/toggle", {method:"POST",
+        const r = await fetch("/api/grocery/checkoff", {method:"POST",
           headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({col, row: x.row, bought: !x.bought})});
+          body: JSON.stringify({col, row: x.row})});
         if(r.ok) refreshGrocery(); else d.style.opacity = "";
       }catch(e){ d.style.opacity = ""; }
     });
@@ -1022,12 +1052,16 @@ async function refreshGrocery(){
     GR_NOW = g.now || [];
     $("grview").classList.add("live");
     $("grnow").replaceChildren(...GR_NOW.map(x => grRow(x, "A")));
+    grCacheSave({now: GR_NOW});
   }catch(e){
-    GR_LIVE = false;
-    GR_NOW = [];
-    $("grview").classList.remove("live");
-    const snap = (DATA && DATA.grocery) || {now:[]};
-    $("grnow").replaceChildren(...(snap.now || []).map(t => grRow({item:t, bought:false}, "A")));
+    if(!grCache()){
+      GR_LIVE = false;
+      GR_NOW = [];
+      $("grview").classList.remove("live");
+      const snap = (DATA && DATA.grocery) || {now:[]};
+      $("grnow").replaceChildren(...(snap.now || []).map(t => grRow({item:t}, "A")));
+    }
+    /* with a cached list on screen, a failed refresh changes nothing */
   }
   renderUsuals();
 }
@@ -1051,7 +1085,9 @@ async function refreshUsuals(){
     if(!r.ok) throw new Error("no usuals");
     const j = await r.json();
     USUALS = j.categories || [];
+    grCacheSave({cats: USUALS});
   }catch(e){
+    if(USUALS){ renderUsuals(); return; } /* cached tiles stay up, silently */
     USUALS = [];
     $("usuals").innerHTML = '<div class="empty" style="font-size:22px;color:var(--soft)">'
       + "Usuals appear here once the key is on the Portal.</div>";
@@ -1235,7 +1271,15 @@ function showPhoto(){
 }
 function refreshPinBtn(){
   const cur = PH.length ? pinPath(PH[PHI % PH.length]) : null;
-  $("phpinbtn").classList.toggle("on", !!PHPIN && cur === PHPIN);
+  const b = $("phpinbtn");
+  /* The bar button is a two-state toggle: with a pin active it
+     reads "Shuffle" and tapping it clears the pin; with no pin it
+     reads "Show only this" and pins the current photo. Every pin
+     change (bar, settings Clear, auto-clear) funnels through here,
+     so the label can never drift from the state. The gold ring
+     still marks "the pinned photo is the one on screen". */
+  b.textContent = PHPIN ? "Shuffle" : "Show only this";
+  b.classList.toggle("on", !!PHPIN && cur === PHPIN);
 }
 async function loadPhotos(){
   try{
@@ -1324,6 +1368,15 @@ $("phsetbtn").addEventListener("click", () => {
 });
 $("phsetdone").addEventListener("click", () => $("phset").classList.remove("open"));
 $("phpinbtn").addEventListener("click", () => {
+  if(PHPIN){
+    PHPIN = null;
+    localStorage.removeItem("ph_pin");
+    renderPhSettings();
+    refreshPinBtn();
+    armPhotoTimer(); /* rotation resumes at the current speed */
+    toast("Showing all photos");
+    return;
+  }
   if(!PH.length) return;
   PHPIN = pinPath(PH[PHI % PH.length]);
   localStorage.setItem("ph_pin", PHPIN);

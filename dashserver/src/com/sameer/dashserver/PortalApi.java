@@ -18,8 +18,8 @@ import java.util.Map;
 /**
  * The Portal's live Google endpoints, served by DashService:
  *
- *   GET  /api/grocery            -> {now:[{item,bought,row}], later:[...]}
- *   POST /api/grocery/toggle     -> {col:"A"|"B", row:3, bought:true}
+ *   GET  /api/grocery            -> {now:[{item,row}], later:[...]}
+ *   POST /api/grocery/checkoff   -> {col:"A"|"B", row:3} (clears the cell)
  *   POST /api/grocery/add        -> {item:"eggs", col:"A"}
  *   GET  /api/agenda             -> {agenda:[{time, title}]}
  *   GET  /api/calendar?timeMin=<rfc3339>&timeMax=<rfc3339>
@@ -35,10 +35,11 @@ import java.util.Map;
  * Backed by the service-account key (see GoogleClient). Without the
  * key, everything answers 501 and the page uses its snapshot instead.
  *
- * Sheet conventions (Sameer's): column A = Now, column B = Later, and
- * "bought" is a green cell fill that he clears himself once a list is
- * all green. The exact green is calibrated from the first green cell
- * the read finds; toggles reuse it.
+ * Sheet conventions (Sameer's): column A = Now, column B = Later.
+ * Checking an item off means "we got it, that's it": the item's cell
+ * is cleared outright — value and any fill — and it leaves the list.
+ * There is no marked/bought state (the old green-fill toggle was
+ * retired in 6.3).
  */
 public class PortalApi {
     static final String SHEET_ID = "102Y_rnhGDcoMy6uIry_8aLPsILLWPQcoobf4vETAg3M";
@@ -53,7 +54,6 @@ public class PortalApi {
     private final GoogleClient google;
     private Integer sheetGid;
     private Integer usualsGid;
-    private double[] markGreen = {0.298, 0.686, 0.314}; // fallback; calibrated on read
 
     PortalApi(GoogleClient google) { this.google = google; }
 
@@ -69,8 +69,8 @@ public class PortalApi {
                 case "/api/grocery":
                     if (method.equals("GET")) return ok(grocery());
                     break;
-                case "/api/grocery/toggle":
-                    if (method.equals("POST")) { toggle(new JSONObject(body)); return ok(new JSONObject().put("ok", true)); }
+                case "/api/grocery/checkoff":
+                    if (method.equals("POST")) { checkoff(new JSONObject(body)); return ok(new JSONObject().put("ok", true)); }
                     break;
                 case "/api/grocery/add":
                     if (method.equals("POST")) { add(new JSONObject(body)); return ok(new JSONObject().put("ok", true)); }
@@ -115,7 +115,7 @@ public class PortalApi {
     private JSONObject grocery() throws Exception {
         String range = URLEncoder.encode("'" + TAB + "'!A1:B80", "UTF-8");
         String url = SHEETS + "?ranges=" + range + "&includeGridData=true"
-                + "&fields=sheets.properties,sheets.data.rowData.values(formattedValue,effectiveFormat.backgroundColor)";
+                + "&fields=sheets.properties,sheets.data.rowData.values(formattedValue)";
         JSONObject root = new JSONObject(google.get(url));
         JSONArray sheets = root.getJSONArray("sheets");
         JSONArray now = new JSONArray(), later = new JSONArray();
@@ -142,39 +142,36 @@ public class PortalApi {
         JSONObject cell = vals.getJSONObject(col);
         String v = cell.optString("formattedValue", "").trim();
         if (v.isEmpty()) return;
-        boolean bought = false;
-        JSONObject fmt = cell.optJSONObject("effectiveFormat");
-        if (fmt != null) {
-            JSONObject bg = fmt.optJSONObject("backgroundColor");
-            if (bg != null) {
-                double rd = bg.optDouble("red", 1), gn = bg.optDouble("green", 1),
-                       bl = bg.optDouble("blue", 1);
-                if (gn > 0.45 && gn - rd > 0.12 && gn - bl > 0.08) {
-                    bought = true;
-                    markGreen = new double[]{rd, gn, bl}; // calibrate to his green
-                }
-            }
-        }
-        out.put(new JSONObject().put("item", v).put("bought", bought).put("row", row));
+        out.put(new JSONObject().put("item", v).put("row", row));
     }
 
     // ---------- grocery: writes ----------
 
-    private void toggle(JSONObject req) throws Exception {
+    /** Check-off = "we got it, that's it": clear the cell's value and
+        clear any fill, so the cell goes back to blank. The item
+        leaves the list on the next read; there is nothing to undo
+        because there is no marked state to restore. */
+    private void checkoff(JSONObject req) throws Exception {
         if (sheetGid == null) grocery(); // learn the tab id first
-        int col = "B".equals(req.getString("col")) ? 1 : 0;
+        String colLetter = "B".equals(req.optString("col", "A")) ? "B" : "A";
+        int col = "B".equals(colLetter) ? 1 : 0;
         int row = req.getInt("row");
-        boolean bought = req.getBoolean("bought");
-        double[] c = bought ? markGreen : new double[]{1, 1, 1};
-        JSONObject color = new JSONObject().put("red", c[0]).put("green", c[1]).put("blue", c[2]);
-        JSONObject range = new JSONObject()
+        // 1) clear the value (same write the delete path uses)
+        String range = "'" + TAB + "'!" + colLetter + row;
+        JSONObject vbody = new JSONObject()
+                .put("range", range)
+                .put("values", new JSONArray().put(new JSONArray().put("")));
+        google.putJson(SHEETS + "/values/" + URLEncoder.encode(range, "UTF-8")
+                + "?valueInputOption=RAW", vbody.toString());
+        // 2) clear any fill: naming the field in the mask while the
+        //    cell carries no backgroundColor clears it to no-fill.
+        JSONObject grange = new JSONObject()
                 .put("sheetId", sheetGid)
                 .put("startRowIndex", row - 1).put("endRowIndex", row)
                 .put("startColumnIndex", col).put("endColumnIndex", col + 1);
         JSONObject repeat = new JSONObject()
-                .put("range", range)
-                .put("cell", new JSONObject().put("userEnteredFormat",
-                        new JSONObject().put("backgroundColor", color)))
+                .put("range", grange)
+                .put("cell", new JSONObject().put("userEnteredFormat", new JSONObject()))
                 .put("fields", "userEnteredFormat.backgroundColor");
         JSONObject body = new JSONObject().put("requests",
                 new JSONArray().put(new JSONObject().put("repeatCell", repeat)));
