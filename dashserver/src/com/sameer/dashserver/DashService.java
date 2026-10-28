@@ -5,6 +5,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioTrack;
 import android.os.IBinder;
 import android.os.PowerManager;
 
@@ -267,6 +270,7 @@ public class DashService extends Service {
                             switch (view) {
                                 case "home": case "prayer": case "weather":
                                 case "groceries": case "photos": case "calendar":
+                                case "timer":
                                     break;
                                 default: view = "home";
                             }
@@ -553,6 +557,11 @@ public class DashService extends Service {
                     }
                     return new PortalApi.Result(200, "{\"ok\":true}");
                 }
+                case "/api/timer/chime": {
+                    if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    ChimePlayer.play();
+                    return new PortalApi.Result(200, "{\"ok\":true}");
+                }
                 case "/api/prayer": {
                     if (!method.equals("GET")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     return new PortalApi.Result(200, onDevice.prayer().toString());
@@ -571,6 +580,66 @@ public class DashService extends Service {
 
     private static final Object SHOW_LOCK = new Object();
 
+    /** Timer-done chime (6.14): a synthesized two-tone bell played
+        natively on the alarm stream, so the dashboard page can sound
+        the timer without depending on WebView media policies. The
+        page POSTs /api/timer/chime once per repeat cycle while its
+        done state stands; each POST restarts the chime. */
+    static final class ChimePlayer {
+        private static final int SR = 44100;
+        private static short[] buffer;
+        private static AudioTrack track;
+
+        private static synchronized short[] buffer() {
+            if (buffer != null) return buffer;
+            double[] tones = {1046.5, 1318.5, 1568.0};   // C6 E6 G6
+            double[] durs = {0.45, 0.45, 1.1};
+            int total = 0;
+            for (double d : durs) total += (int) (SR * d);
+            short[] out = new short[total];
+            int pos = 0;
+            for (int t = 0; t < tones.length; t++) {
+                int n = (int) (SR * durs[t]);
+                for (int i = 0; i < n; i++) {
+                    double time = i / (double) SR;
+                    double env = Math.min(1.0, i / (SR * 0.01))
+                            * Math.exp(-2.2 * time / durs[t]);
+                    double v = Math.sin(2 * Math.PI * tones[t] * time)
+                            + 0.35 * Math.sin(2 * Math.PI * tones[t] * 2 * time);
+                    out[pos++] = (short) (v * env * 0.55 * Short.MAX_VALUE);
+                }
+            }
+            buffer = out;
+            return out;
+        }
+
+        static synchronized void play() {
+            try {
+                short[] buf = buffer();
+                if (track != null) {
+                    try { track.stop(); } catch (Exception ignored) { }
+                    track.release();
+                    track = null;
+                }
+                track = new AudioTrack.Builder()
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build())
+                        .setAudioFormat(new AudioFormat.Builder()
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setSampleRate(SR)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                .build())
+                        .setBufferSizeInBytes(buf.length * 2)
+                        .setTransferMode(AudioTrack.MODE_STATIC)
+                        .build();
+                track.write(buf, 0, buf.length);
+                track.play();
+            } catch (Exception ignored) { }
+        }
+    }
+
     /** Store a Muse-pushed show card (show.json in the served dir;
         the page polls GET /api/show and renders it until the card is
         dismissed with ✕ or replaced — Open only launches the link
@@ -588,8 +657,10 @@ public class DashService extends Service {
             boolean urlOk = url.isEmpty() || (url.length() <= 1000
                     && (url.startsWith("http://") || url.startsWith("https://")));
             org.json.JSONArray sections = sanitizeSections(req.optJSONArray("sections"));
+            int timerSec = req.optInt("timer_seconds", 0);
+            if (timerSec < 0 || timerSec > 86400) timerSec = 0;
             if (title.isEmpty() || title.length() > 200 || !urlOk
-                    || (url.isEmpty() && sections == null)) {
+                    || (url.isEmpty() && sections == null && timerSec <= 0)) {
                 return new PortalApi.Result(400, "{\"error\":\"bad card\"}");
             }
             long now = System.currentTimeMillis();
@@ -607,6 +678,7 @@ public class DashService extends Service {
                     && (img.startsWith("http://") || img.startsWith("https://"))) {
                 card.put("image", img);
             }
+            if (timerSec > 0) card.put("timer_seconds", timerSec);
             synchronized (SHOW_LOCK) {
                 if (!ROOT.exists()) ROOT.mkdirs();
                 try (FileOutputStream fos = new FileOutputStream(new File(ROOT, "show.json"))) {
