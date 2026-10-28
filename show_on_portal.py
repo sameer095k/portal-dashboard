@@ -89,6 +89,8 @@ def main():
     ap.add_argument("--subtitle")
     ap.add_argument("--image")
     ap.add_argument("--sections", help="text file: '## Heading' starts a section")
+    ap.add_argument("--timer", type=int, metavar="SECONDS",
+                    help="start the dashboard's native timer for this many seconds")
     ap.add_argument("--clear", action="store_true", help="clear the current card")
     args = ap.parse_args()
 
@@ -98,6 +100,12 @@ def main():
         status, body = post(host, port, "/api/show/clear")
         print(f"clear: HTTP {status} {body}")
         return 0
+
+    if args.timer:
+        payload = {"title": "Timer", "timer_seconds": args.timer}
+        status, body = post(host, port, "/api/show", token, payload)
+        print(f"timer: HTTP {status} {body}")
+        return 0 if status == 200 else 1
 
     if not args.title:
         ap.error("--title is required (or use --clear)")
