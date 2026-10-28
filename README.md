@@ -17,6 +17,17 @@ device. Project record and design decisions live in the companion repo
 - `daily_word.py` — word-of-the-day feeds (Transparent Language RSS)
 - `dashserver/` — DashServer Android source (raw toolchain build, no Gradle)
 
+## Show page (visual answers)
+
+- `show_on_portal.py` posts visual content to DashServer's `/api/show`;
+  DashServer stores it in `show.json` in the served directory, and the
+  dashboard page polls `/api/show` every 5 seconds to render it.
+- **Caller rule (2026-10-27):** for a visual Portal ask (recipes,
+  how-tos, lists, comparisons), post the full content to the Show page
+  as soon as it's ready and keep the spoken reply to one brief
+  confirmation. Do not read the card's sections or details aloud
+  unless Sameer asks.
+
 ## Deploy routes
 
 - **Page:** PUT to the Portal's DashServer upload endpoint from the Mac —
