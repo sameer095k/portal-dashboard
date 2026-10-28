@@ -625,7 +625,7 @@
 <audio id="azan" src="azan.mp3" preload="auto"></audio>
 <script>
 "use strict";
-let DATA = null, lastAzanFired = "", NEXT = null;
+let DATA = null, lastAzanFired = "", NEXT = null, CUR = null;
 /* The interactive app loads with ?app=1; the screensaver doesn't.
    App-only controls (launch buttons, delete, upload) key off this. */
 const IS_APP = /[?&]app=1/.test(location.search);
@@ -665,6 +665,19 @@ function tick(){
       if(a !== null && a > nowMin){ next = p; break; }
     }
     if(!next) next = list[0]; // wraps to Fajr tomorrow
+    // Current prayer: its azan has passed and its IOK iqamah + 10 min
+    // has not (a prayer with no iqamah, e.g. Sunrise, gets azan + 10).
+    // While one is current, IT holds the highlight instead of the next
+    // prayer — Sameer's rule, 2026-10-27.
+    let current = null;
+    for(const p of list){
+      const a = toMin(p.azan);
+      if(a === null || a > nowMin) continue;
+      const iq = p.iqamah ? toMin(p.iqamah) : null;
+      const end = (iq !== null ? iq : a) + 10;
+      if(nowMin < end) current = p;
+    }
+    CUR = current ? current.name : null;
     if(next){
       const a = toMin(next.azan);
       let diff = a - nowMin; if(diff < 0) diff += 1440;
@@ -672,10 +685,11 @@ function tick(){
       NEXT = { name: next.name, azan: next.azan,
                count: "in " + (hh ? hh + "h " + pad(mm) + "m" : mm + "m") };
       if($("prview").classList.contains("open")) renderPrayerView();
+      const hl = CUR || next.name;
       document.querySelectorAll(".pcard").forEach(el=>{
-        el.classList.toggle("isnext", el.dataset.name === next.name);
+        el.classList.toggle("isnext", el.dataset.name === hl);
         const pa = toMin(el.dataset.azan);
-        el.classList.toggle("past", pa !== null && pa <= nowMin && el.dataset.name !== next.name);
+        el.classList.toggle("past", pa !== null && pa <= nowMin && el.dataset.name !== hl && el.dataset.name !== next.name);
       });
       // Azan: fire within the azan minute, once.
       const key = now.toDateString() + " " + next.name;
@@ -1049,7 +1063,7 @@ function renderPrayerView(){
   $("prnext").innerHTML = NEXT
     ? NEXT.name + " " + NEXT.azan + " · <b>" + NEXT.count + "</b>" : "";
   $("prrows").innerHTML = DATA.prayer.today.map(p =>
-    '<div class="prr' + (NEXT && p.name === NEXT.name ? " isnext" : "") + '">' +
+    '<div class="prr' + (p.name === (CUR || (NEXT && NEXT.name)) ? " isnext" : "") + '">' +
     '<div class="n">' + p.name + '</div>' +
     '<div class="a">' + stripAP(p.azan) + '</div>' +
     '<div class="iq">' +
