@@ -198,9 +198,16 @@ public class DashService extends Service {
         // POST /api/show is the one local API that changes what the
         // kitchen screen shows, so it takes the upload bearer token —
         // the page only ever reads and clears (see handleLocalApi).
+        // Exception: a peer on loopback is an app on this device itself
+        // (portal-muse's display.show gadget command posts the card
+        // Muse asked for) — already inside the device's trust
+        // boundary, so it needs no token. Anything arriving over the
+        // network still needs the token, exactly as before.
         if (method.equals("POST") && path.equals("/api/show")) {
             String auth = headers.get("authorization");
-            if (auth == null || !auth.equals("Bearer " + TOKEN)) {
+            java.net.InetAddress peer = s.getInetAddress();
+            boolean onDevice = peer != null && peer.isLoopbackAddress();
+            if (!onDevice && (auth == null || !auth.equals("Bearer " + TOKEN))) {
                 r = new PortalApi.Result(401, "{\"error\":\"auth\"}");
             } else {
                 r = saveShowCard(body);
@@ -271,6 +278,29 @@ public class DashService extends Service {
                             if (al.isEmpty() || al.length() > 40
                                     || al.contains("/") || al.contains("\\")) al = "All";
                             cur.put("album", al);
+                        }
+                        /* Photo settings live server-side so the app and
+                           screensaver faces (separate WebView storage)
+                           can never disagree on rotate speed or pin. */
+                        if (req.has("rotate")) {
+                            int ms = req.optInt("rotate", 30000);
+                            if (ms != 0 && ms != 10000 && ms != 30000
+                                    && ms != 60000 && ms != 300000) ms = 30000;
+                            cur.put("rotate", ms);
+                        }
+                        if (req.has("pin")) {
+                            if (req.isNull("pin")) {
+                                cur.put("pin", org.json.JSONObject.NULL);
+                            } else {
+                                String p = req.optString("pin", "").trim();
+                                if (!p.isEmpty() && p.length() <= 200
+                                        && !p.contains("..")) cur.put("pin", p);
+                            }
+                        }
+                        if (req.has("order")) {
+                            String od = req.optString("order", "shuffle");
+                            if (!od.equals("seq") && !od.equals("shuffle")) od = "shuffle";
+                            cur.put("order", od);
                         }
                         if (!cur.has("view")) cur.put("view", "home");
                         if (!ROOT.exists()) ROOT.mkdirs();
