@@ -26,7 +26,9 @@ device. Project record and design decisions live in the companion repo
   how-tos, lists, comparisons), post the full content to the Show page
   as soon as it's ready and keep the spoken reply to one brief
   confirmation. Do not read the card's sections or details aloud
-  unless Sameer asks.
+  unless Sameer asks. Recipe/how-to cards also carry the video (or
+  source) link and its thumbnail — the Open button needs a URL, and a
+  YouTube link opens in SmartTube.
 
 ## Deploy routes
 
