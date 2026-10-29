@@ -339,9 +339,11 @@
   .cday.today .cdb .num{color:var(--gold)}
   .cevs{flex:1; display:flex; flex-direction:column; gap:7px; justify-content:center; min-width:0}
   .cevrow{background:var(--evbg); border-radius:11px; padding:9px 14px; font-size:22px;
-    display:flex; gap:14px; align-items:baseline}
+    display:flex; flex-wrap:wrap; gap:5px 14px; align-items:baseline}
   .cevrow .t{font-weight:600; flex:none; min-width:104px}
-  .cevrow .loc{margin-left:auto; font-size:19px; color:var(--soft); flex:none}
+  .cevrow .ttl{flex:1 1 220px; min-width:0}
+  .cevrow .loc{margin-left:auto; font-size:19px; color:var(--soft); flex:0 1 auto;
+    min-width:0; text-align:right}
   .cnone{font-size:21px; color:var(--soft); padding:4px 2px}
   #caladd{position:absolute; right:28px; bottom:28px; width:72px; height:72px; z-index:5;
     border-radius:50%; background:var(--gold); color:var(--card); font-size:40px;
@@ -1991,11 +1993,11 @@ function renderCalendar(){
         qtag = q ? '<span class="qtag">Queued</span>' : "";
       if(e.allday){
         all += '<span class="cad' + qcls + '"' + tap(e) + '>' + esc(e.title) + "</span>";
-        rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">All day</span><span>' + esc(e.title) +
+        rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">All day</span><span class="ttl">' + esc(e.title) +
           "</span>" + qtag + (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
         continue;
       }
-      rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">' + fmtCalTime(it.sd) + "</span><span>" +
+      rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">' + fmtCalTime(it.sd) + '</span><span class="ttl">' +
         esc(e.title) + "</span>" + qtag +
         (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
       const sMin = Math.max(0, (it.sd - d) / 60000 - CAL_H0 * 60);
