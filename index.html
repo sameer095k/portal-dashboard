@@ -2012,13 +2012,16 @@ function renderCalendar(){
       const e = it.e;
       const q = e.src === "queue", qcls = q ? " queued" : "",
         qtag = q ? '<span class="qtag">Queued</span>' : "";
+      // Google color, worn as a soft tint (hex + ~20% alpha). Queued
+      // (not-yet-in-Google) events have none and keep the default tint.
+      const tint = e.color ? "background:" + e.color + "33" : "";
       if(e.allday){
-        all += '<span class="cad' + qcls + '"' + tap(e) + '>' + esc(e.title) + "</span>";
-        rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">All day</span><span class="ttl">' + esc(e.title) +
+        all += '<span class="cad' + qcls + '"' + tap(e) + (tint ? ' style="' + tint + '"' : "") + '>' + esc(e.title) + "</span>";
+        rows += '<div class="cevrow' + qcls + '"' + tap(e) + (tint ? ' style="' + tint + '"' : "") + '><span class="t">All day</span><span class="ttl">' + esc(e.title) +
           "</span>" + qtag + (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
         continue;
       }
-      rows += '<div class="cevrow' + qcls + '"' + tap(e) + '><span class="t">' + fmtCalTime(it.sd) + '</span><span class="ttl">' +
+      rows += '<div class="cevrow' + qcls + '"' + tap(e) + (tint ? ' style="' + tint + '"' : "") + '><span class="t">' + fmtCalTime(it.sd) + '</span><span class="ttl">' +
         esc(e.title) + "</span>" + qtag +
         (e.location ? '<span class="loc">' + esc(e.location) + "</span>" : "") + "</div>";
       const sMin = Math.max(0, (it.sd - d) / 60000 - CAL_H0 * 60);
@@ -2027,7 +2030,7 @@ function renderCalendar(){
       const dur = (it.ed - it.sd) / 60000;
       const minH = dur >= 45 ? 46 : 30; // two lines need the room
       blocks += '<div class="cev' + qcls + '"' + tap(e) + ' style="top:' + (sMin / 60 * CAL_PX) + "px;height:" +
-        Math.max((eMin - sMin) / 60 * CAL_PX, minH) + 'px"><span class="w">' + esc(e.title) + "</span>" +
+        Math.max((eMin - sMin) / 60 * CAL_PX, minH) + "px" + (tint ? ";" + tint : "") + '"><span class="w">' + esc(e.title) + "</span>" +
         (dur >= 45 ? '<span class="t">' + fmtCalTime(it.sd) + " – " + fmtCalTime(it.ed) + "</span>" : "") +
         "</div>";
     }
