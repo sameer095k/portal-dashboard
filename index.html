@@ -816,7 +816,8 @@ function render(){
   if(!DATA) return;
   if(DATA.weather){
     const w = DATA.weather;
-    $("weather").innerHTML = "<b>" + w.now_f + "°</b> " + w.label + " &nbsp;<span>H " + w.hi + "° · L " + w.lo + "°</span>";
+    const wHtml = "<b>" + w.now_f + "°</b> " + w.label + " &nbsp;<span>H " + w.hi + "° · L " + w.lo + "°</span>";
+    if(wHtml !== render.wHtml){ render.wHtml = wHtml; $("weather").innerHTML = wHtml; }
   }
   if(DATA.prayer && JSON.stringify(DATA.prayer.today) !== render.pSig){
     render.pSig = JSON.stringify(DATA.prayer.today);
@@ -829,39 +830,44 @@ function render(){
       "</div>").join("");
   }
   const ag = $("agenda");
-  if(DATA.agenda && DATA.agenda.length){
-    ag.innerHTML = DATA.agenda.map(e =>
+  const agHtml = (DATA.agenda && DATA.agenda.length)
+    ? DATA.agenda.map(e =>
       "<li>" + (e.time && e.time !== "All day" ? '<span class="t">' + e.time + "</span>" : '<span class="t">All day</span>') +
-      "<span>" + e.title + "</span></li>").join("");
-  } else {
-    ag.innerHTML = '<li class="empty">Nothing scheduled</li>';
-  }
+      "<span>" + e.title + "</span></li>").join("")
+    : '<li class="empty">Nothing scheduled</li>';
+  if(agHtml !== render.agHtml){ render.agHtml = agHtml; ag.innerHTML = agHtml; }
   const gn = $("grocnow");
   if(DATA.grocery){
-    gn.innerHTML = (DATA.grocery.now || []).map(i => "<li>" + i + "</li>").join("") || '<li class="empty">—</li>';
+    const gHtml = (DATA.grocery.now || []).map(i => "<li>" + i + "</li>").join("") || '<li class="empty">—</li>';
+    if(gHtml !== render.gHtml){ render.gHtml = gHtml; gn.innerHTML = gHtml; }
   }
-  if(DATA.word){
-    document.getElementById("word").style.display = "";
-    const W = DATA.word;
-    $("play-ur").onclick = () => new Audio(W.audio_ur).play().catch(()=>{});
-    if(W.example){
-      $("w-lines").style.display = "";
-      $("w-fb").style.display = "none";
-      $("w-ex").innerHTML = highlightUrdu(W.example, W.ur);
-      if(W.example_meaning){
-        $("w-en").style.display = "";
-        $("w-en").innerHTML = highlightEnglish(W.example_meaning, W.ur_meaning);
+  const wordSig = DATA.word
+    ? JSON.stringify([DATA.word.ur, DATA.word.example, DATA.word.example_meaning, DATA.word.audio_ur]) : "";
+  if(wordSig !== render.wordSig){
+    render.wordSig = wordSig;
+    if(DATA.word){
+      document.getElementById("word").style.display = "";
+      const W = DATA.word;
+      $("play-ur").onclick = () => new Audio(W.audio_ur).play().catch(()=>{});
+      if(W.example){
+        $("w-lines").style.display = "";
+        $("w-fb").style.display = "none";
+        $("w-ex").innerHTML = highlightUrdu(W.example, W.ur);
+        if(W.example_meaning){
+          $("w-en").style.display = "";
+          $("w-en").innerHTML = highlightEnglish(W.example_meaning, W.ur_meaning);
+        } else {
+          $("w-en").style.display = "none";
+        }
       } else {
-        $("w-en").style.display = "none";
+        $("w-lines").style.display = "none";
+        $("w-fb").style.display = "";
+        $("w-ur").textContent = W.ur;
+        $("w-urt").textContent = [W.ur_translit, W.ur_meaning].filter(Boolean).join(" · ");
       }
     } else {
-      $("w-lines").style.display = "none";
-      $("w-fb").style.display = "";
-      $("w-ur").textContent = W.ur;
-      $("w-urt").textContent = [W.ur_translit, W.ur_meaning].filter(Boolean).join(" · ");
+      document.getElementById("word").style.display = "none";
     }
-  } else {
-    document.getElementById("word").style.display = "none";
   }
 }
 
