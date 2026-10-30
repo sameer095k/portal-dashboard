@@ -329,6 +329,9 @@ public class PortalApi {
     /** Guards the calendarList repair below to at most once per
         server run. */
     private boolean familyListInsertTried = false;
+    /** Calendar colors fetched by direct id, keyed by raw calendar id. */
+    private final java.util.Map<String, String> calColorCache = new java.util.HashMap<>();
+    private final java.util.Set<String> calColorTried = new java.util.HashSet<>();
 
     /** The account's calendar list, with one repair: a calendar
         shared to a service account can take a very long time to
@@ -539,6 +542,26 @@ public class PortalApi {
         dates for all-day), so the page renders them with its own clock.
         Follows the agenda() calendar rule: every calendar on the list
         the account can actually read. */
+    /** Google Calendar's fixed event palette (colorId -> background hex),
+     *  as returned by the Calendar API colors endpoint. An event with no
+     *  colorId of its own wears its calendar's backgroundColor instead. */
+    private static String eventColor(String colorId) {
+        switch (colorId == null ? "" : colorId) {
+            case "1": return "#a4bdfc";
+            case "2": return "#7ae7bf";
+            case "3": return "#dbadff";
+            case "4": return "#ff887c";
+            case "5": return "#fbd75b";
+            case "6": return "#ffb878";
+            case "7": return "#46d6db";
+            case "8": return "#e1e1e1";
+            case "9": return "#5484ed";
+            case "10": return "#51b749";
+            case "11": return "#dc2127";
+            default: return "";
+        }
+    }
+
     private JSONObject calendar(Map<String, String> q) throws Exception {
         SimpleDateFormat rfc = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US);
         Date start, end;
@@ -569,6 +592,38 @@ public class PortalApi {
                 boolean isFamily = FAMILY_CAL_ID.equals(rawId);
                 String calName = calItem.optString("summary", "");
                 if (calName.isEmpty() && isFamily) calName = "Family";
+                String calColor = calItem.optString("backgroundColor", "");
+                if (calColor.isEmpty()) {
+                    // A calendar the SA reaches by direct id may ride in
+                    // this list as a synthesized bare entry with no color
+                    // (see calendarListItems) — fetch the calendar itself.
+                    // The calendar's own color lives on the owner's
+                    // calendarList entry, which Google does not expose to
+                    // this service account: the Family calendar is not in
+                    // the SA's list (calendarList.get 404s, measured
+                    // 2026-10-30) and calendars.get returns the color
+                    // empty for a shared group calendar. So a calendar
+                    // with no entry color simply has none here — only
+                    // per-event colors (colorId) come through. Tried once
+                    // per calendar per process.
+                    calColor = calColorCache.getOrDefault(rawId, "");
+                    if (calColor.isEmpty() && !calColorTried.contains(rawId)) {
+                        calColorTried.add(rawId);
+                        try {
+                            JSONObject entry = new JSONObject(google.get(CAL
+                                    + "/users/me/calendarList/" + URLEncoder.encode(rawId, "UTF-8")));
+                            calColor = entry.optString("backgroundColor", "");
+                        } catch (Exception ignored) { }
+                        if (calColor.isEmpty()) {
+                            try {
+                                JSONObject calRes = new JSONObject(google.get(CAL
+                                        + "/calendars/" + URLEncoder.encode(rawId, "UTF-8")));
+                                calColor = calRes.optString("backgroundColor", "");
+                            } catch (Exception ignored) { }
+                        }
+                        if (!calColor.isEmpty()) calColorCache.put(rawId, calColor);
+                    }
+                }
                 String id = URLEncoder.encode(rawId, "UTF-8");
                 String pageToken = null;
                 for (int page = 0; page < 3; page++) {
@@ -589,6 +644,12 @@ public class PortalApi {
                             JSONObject out = new JSONObject();
                             out.put("title", ev.optString("summary", "(no title)"));
                             out.put("location", ev.optString("location", ""));
+                            // The event's own Google color wins; otherwise
+                            // the calendar's color. The page tints the
+                            // event's block/row with it (2026-10-30).
+                            String color = eventColor(ev.optString("colorId", ""));
+                            if (color.isEmpty()) color = calColor;
+                            if (!color.isEmpty()) out.put("color", color);
                             if (!calName.isEmpty()) out.put("cal", calName);
                             // The Google id rides along ONLY for the
                             // Family calendar — it is what makes an
