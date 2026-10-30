@@ -275,7 +275,7 @@
   #prnext b{color:var(--next)}
   .prr{display:flex; align-items:baseline; gap:22px; background:var(--card); border:1px solid var(--line);
     border-radius:16px; padding:12px 22px; margin-bottom:9px}
-  .prr.isnext{border:2px solid var(--next)}
+  .prr.isnext{border-color:var(--next); box-shadow:0 0 0 1px var(--next) inset}
   .prr .n{width:170px; font-size:30px; font-weight:600}
   .prr .a{font-size:40px; font-weight:600; font-variant-numeric:tabular-nums}
   .prr .iq{margin-left:auto; text-align:right; font-size:22px; color:var(--soft); line-height:1.35}
@@ -720,7 +720,8 @@ function fmtClock(d){
 function tick(){
   const now = new Date();
   const c = fmtClock(now);
-  $("clock").innerHTML = c.t + '<span class="sec">' + c.s + "</span>";
+  const clockHtml = c.t + '<span class="sec">' + c.s + "</span>";
+  if(clockHtml !== tick.cHtml){ tick.cHtml = clockHtml; $("clock").innerHTML = clockHtml; }
   $("date").textContent = now.toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric"});
   const night = now.getHours() < 6 || now.getHours() >= 19;
   document.body.classList.toggle("night", night);
@@ -817,7 +818,8 @@ function render(){
     const w = DATA.weather;
     $("weather").innerHTML = "<b>" + w.now_f + "°</b> " + w.label + " &nbsp;<span>H " + w.hi + "° · L " + w.lo + "°</span>";
   }
-  if(DATA.prayer){
+  if(DATA.prayer && JSON.stringify(DATA.prayer.today) !== render.pSig){
+    render.pSig = JSON.stringify(DATA.prayer.today);
     $("prayer").innerHTML = DATA.prayer.today.map(p =>
       '<div class="pcard" data-name="' + p.name + '" data-azan="' + p.azan + '">' +
       '<div class="pn">' + p.name + '</div>' +
@@ -1127,18 +1129,31 @@ function buildRadar(){
     '<div class="dot" style="left:' + (W / 2) + "px;top:" + (H / 2) + 'px"></div>' +
     '<div class="attr">NEXRAD · Iowa Env. Mesonet · Esri · © OSM contributors</div>';
 }
+/* Rows are built once per change in the day's times; the per-second tick
+   then only moves the highlight class and, once a minute, the countdown
+   text. Rebuilding innerHTML every second repainted the whole view —
+   the flicker Sameer saw around the active border (2026-10-30). */
+let prSig = null, prHead = null;
 function renderPrayerView(){
   if(!DATA || !DATA.prayer) return;
-  $("prnext").innerHTML = NEXT
+  const sig = JSON.stringify(DATA.prayer.today);
+  if(sig !== prSig){
+    prSig = sig;
+    $("prrows").innerHTML = DATA.prayer.today.map(p =>
+      '<div class="prr" data-name="' + p.name + '">' +
+      '<div class="n">' + p.name + '</div>' +
+      '<div class="a">' + stripAP(p.azan) + '</div>' +
+      '<div class="iq">' +
+      (p.iqamah ? "IOK <b>" + stripAP(p.iqamah) + "</b>" : "") +
+      (p.chess_iqamah ? "<br>CHESS <b>" + stripAP(p.chess_iqamah) + "</b>" : "") +
+      "</div></div>").join("");
+  }
+  const hl = CUR || (NEXT && NEXT.name);
+  document.querySelectorAll(".prr").forEach(el =>
+    el.classList.toggle("isnext", el.dataset.name === hl));
+  const head = NEXT
     ? NEXT.name + " " + NEXT.azan + " · <b>" + NEXT.count + "</b>" : "";
-  $("prrows").innerHTML = DATA.prayer.today.map(p =>
-    '<div class="prr' + (p.name === (CUR || (NEXT && NEXT.name)) ? " isnext" : "") + '">' +
-    '<div class="n">' + p.name + '</div>' +
-    '<div class="a">' + stripAP(p.azan) + '</div>' +
-    '<div class="iq">' +
-    (p.iqamah ? "IOK <b>" + stripAP(p.iqamah) + "</b>" : "") +
-    (p.chess_iqamah ? "<br>CHESS <b>" + stripAP(p.chess_iqamah) + "</b>" : "") +
-    "</div></div>").join("");
+  if(head !== prHead){ prHead = head; $("prnext").innerHTML = head; }
 }
 /* ---- side rail: one stage, five views. The selection persists
         server-side (/api/ui-state on DashServer) so the screensaver
