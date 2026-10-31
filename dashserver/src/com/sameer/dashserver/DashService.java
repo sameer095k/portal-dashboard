@@ -306,6 +306,11 @@ public class DashService extends Service {
                             if (!od.equals("seq") && !od.equals("shuffle")) od = "shuffle";
                             cur.put("order", od);
                         }
+                        if (req.has("sort")) {
+                            String so = req.optString("sort", "added");
+                            if (!so.equals("added") && !so.equals("taken")) so = "added";
+                            cur.put("sort", so);
+                        }
                         if (!cur.has("view")) cur.put("view", "home");
                         if (!ROOT.exists()) ROOT.mkdirs();
                         try (FileOutputStream fos = new FileOutputStream(f)) {
@@ -320,7 +325,8 @@ public class DashService extends Service {
                     File dir = new File(ROOT, "photos");
                     org.json.JSONArray albums = new org.json.JSONArray();
                     org.json.JSONArray all = new org.json.JSONArray();
-                    org.json.JSONArray main = imageList(dir, "photos/");
+                    org.json.JSONObject meta = new org.json.JSONObject();
+                    org.json.JSONArray main = imageList(dir, "photos/", meta);
                     for (int i = 0; i < main.length(); i++) all.put(main.get(i));
                     albums.put(new org.json.JSONObject().put("name", "Main").put("photos", main));
                     List<String> subs = new ArrayList<>();
@@ -334,12 +340,12 @@ public class DashService extends Service {
                     }
                     Collections.sort(subs);
                     for (String sub : subs) {
-                        org.json.JSONArray ps = imageList(new File(dir, sub), "photos/" + sub + "/");
+                        org.json.JSONArray ps = imageList(new File(dir, sub), "photos/" + sub + "/", meta);
                         for (int i = 0; i < ps.length(); i++) all.put(ps.get(i));
                         albums.put(new org.json.JSONObject().put("name", sub).put("photos", ps));
                     }
                     return new PortalApi.Result(200, new org.json.JSONObject()
-                            .put("albums", albums).put("photos", all).toString());
+                            .put("albums", albums).put("photos", all).put("meta", meta).toString());
                 }
                 case "/api/photos/delete": {
                     if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
@@ -872,7 +878,8 @@ public class DashService extends Service {
                 || n.endsWith(".webp") || n.endsWith(".gif");
     }
 
-    private static org.json.JSONArray imageList(File dir, String prefix) throws Exception {
+    private static org.json.JSONArray imageList(File dir, String prefix,
+                                                 org.json.JSONObject meta) throws Exception {
         List<File> fs = new ArrayList<>();
         File[] files = dir.listFiles();
         if (files != null) {
@@ -884,8 +891,36 @@ public class DashService extends Service {
         org.json.JSONArray arr = new org.json.JSONArray();
         // ?v=<mtime> versions the URL so the immutable cache headers on
         // photo responses can never serve a stale image after a replace.
-        for (File f : fs) arr.put(prefix + f.getName() + "?v=" + (f.lastModified() / 1000));
+        for (File f : fs) {
+            arr.put(prefix + f.getName() + "?v=" + (f.lastModified() / 1000));
+            // EXIF date-taken rides along (when the file has one) so the
+            // page can sort by the day the photo was taken, not just
+            // the day it was added (his ask 2026-10-31).
+            if (meta != null) {
+                long tk = takenMs(f);
+                if (tk > 0) meta.put(prefix + f.getName(),
+                        new org.json.JSONObject().put("taken", tk));
+            }
+        }
         return arr;
+    }
+
+    /** EXIF date-taken in epoch ms, or 0 when the file carries none.
+        Parsed as device-local time — EXIF carries no timezone. */
+    private static long takenMs(File f) {
+        try {
+            String n = f.getName().toLowerCase(Locale.US);
+            if (!n.endsWith(".jpg") && !n.endsWith(".jpeg")) return 0;
+            android.media.ExifInterface ex =
+                    new android.media.ExifInterface(f.getAbsolutePath());
+            String dt = ex.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL);
+            if (dt == null) dt = ex.getAttribute(android.media.ExifInterface.TAG_DATETIME);
+            if (dt == null) return 0;
+            return new java.text.SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+                    .parse(dt.trim()).getTime();
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** Resolve a client-supplied photo path, refusing anything that
