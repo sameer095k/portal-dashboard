@@ -971,7 +971,8 @@ public class DashService extends Service {
                     + "<p><input type='file' name='photos' accept='image/*' multiple "
                     + "style='font-size:19px'></p>"
                     + "<p><button type='submit' style='font-size:20px;padding:12px 28px'>Send</button></p>"
-                    + "</form><p style='color:#6f6151'>Pick JPEGs if you can — the Portal "
+                    + "</form><p style='color:#6f6151'>Up to 15 photos at a time. "
+                    + "Pick JPEGs if you can — the Portal "
                     + "can't show iPhone HEIC files. (The Add to Portal shortcut converts "
                     + "automatically.)</p></body>";
             byte[] b = html.getBytes("UTF-8");
@@ -1005,13 +1006,17 @@ public class DashService extends Service {
             if (n < 0) break;
             read += n;
         }
-        int saved = savePhotoParts(data, boundary);
+        int[] res = savePhotoParts(data, boundary);
+        int saved = res[0], skipped = res[1];
         // After an upload, ask before closing (his ask 2026-10-31):
         // Add more returns to the picker; Done swaps to the closing note.
         String html = "<!doctype html><meta name=viewport content='width=device-width'>"
                 + "<body style='font-family:sans-serif;padding:24px;background:#f4ead8;color:#2b2118'>"
                 + "<div id='ask'>"
                 + "<h2>Added " + saved + " photo" + (saved == 1 ? "" : "s") + "</h2>"
+                + (skipped > 0
+                    ? "<p style='color:#6f6151'>" + skipped + " left off — 15 max per add.</p>"
+                    : "")
                 + "<p style='font-size:19px'>Add more?</p>"
                 + "<p><a href='/photo-add' style='display:inline-block;font-size:20px;"
                 + "padding:12px 28px;background:#9a6a1f;color:#fff;text-decoration:none;"
@@ -1027,9 +1032,14 @@ public class DashService extends Service {
         out.write(b); out.flush(); s.close();
     }
 
-    /** Minimal multipart parser: walks the parts, saves file parts. */
-    private int savePhotoParts(byte[] data, String boundary) {
-        int saved = 0;
+    /** Max photos saved per add (his cap 2026-10-31; the picker page
+        says the same). Extra file parts are counted as skipped. */
+    private static final int MAX_PHOTOS_PER_ADD = 15;
+
+    /** Minimal multipart parser: walks the parts, saves file parts.
+        Returns {saved, skipped}. */
+    private int[] savePhotoParts(byte[] data, String boundary) {
+        int saved = 0, skipped = 0;
         try {
             byte[] marker = ("--" + boundary).getBytes("UTF-8");
             File dir = new File(ROOT, "photos");
@@ -1057,6 +1067,7 @@ public class DashService extends Service {
                     }
                 }
                 if (filename != null && !filename.isEmpty() && contentEnd > contentStart) {
+                    if (saved >= MAX_PHOTOS_PER_ADD) { skipped++; pos = next; continue; }
                     String ext = ".jpg";
                     String low = filename.toLowerCase(Locale.US);
                     for (String e : new String[]{".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}) {
@@ -1071,7 +1082,7 @@ public class DashService extends Service {
                 pos = next;
             }
         } catch (Exception ignored) { }
-        return saved;
+        return new int[]{saved, skipped};
     }
 
     private static int indexOf(byte[] hay, byte[] needle, int from) {
