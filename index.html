@@ -1853,13 +1853,13 @@ $("phunfile-btn").addEventListener("click", async () => {
         body: JSON.stringify({path: p.split("?")[0]})});
       if(r.ok){
         const j = await r.json().catch(() => ({}));
-        if(j.action === "none") main++; else done++;
+        if(j.action === "only-copy") main++; else done++;
       }
     }catch(e){ /* keep going */ }
   }
   SEL.clear();
-  toast(done ? "Removed " + done + " from the album" + (main ? " · " + main + " already in Main" : "")
-             : "Already in Main");
+  toast(done ? "Removed " + done + " from the album" + (main ? " · " + main + " kept (only copy)" : "")
+             : "Only copy — use Delete to remove it");
   await loadPhotos();
   renderGrid();
 });
