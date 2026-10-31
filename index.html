@@ -622,6 +622,7 @@
     <span id="phselinfo"></span>
     <select id="phmove-sel"></select>
     <button id="phmove-btn">Add to</button>
+    <button id="phunfile-btn">Remove from album</button>
     <button id="phdel-btn">Delete</button>
     <button id="phdone-btn">Done</button>
   </div>
@@ -1838,6 +1839,27 @@ $("phdel-btn").addEventListener("click", async () => {
   }
   SEL.clear();
   toast("Deleted " + done + (done === 1 ? " photo" : " photos"));
+  await loadPhotos();
+  renderGrid();
+});
+$("phunfile-btn").addEventListener("click", async () => {
+  if(!SEL.size) return;
+  const items = [...SEL];
+  let done = 0, main = 0;
+  for(const p of items){
+    try{
+      const r = await fetch("/api/photos/unfile", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({path: p.split("?")[0]})});
+      if(r.ok){
+        const j = await r.json().catch(() => ({}));
+        if(j.action === "none") main++; else done++;
+      }
+    }catch(e){ /* keep going */ }
+  }
+  SEL.clear();
+  toast(done ? "Removed " + done + " from the album" + (main ? " · " + main + " already in Main" : "")
+             : "Already in Main");
   await loadPhotos();
   renderGrid();
 });
