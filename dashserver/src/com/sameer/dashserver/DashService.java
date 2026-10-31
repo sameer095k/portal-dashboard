@@ -1006,10 +1006,22 @@ public class DashService extends Service {
             read += n;
         }
         int saved = savePhotoParts(data, boundary);
+        // After an upload, ask before closing (his ask 2026-10-31):
+        // Add more returns to the picker; Done swaps to the closing note.
         String html = "<!doctype html><meta name=viewport content='width=device-width'>"
-                + "<body style='font-family:sans-serif;padding:24px;background:#f4ead8'>"
+                + "<body style='font-family:sans-serif;padding:24px;background:#f4ead8;color:#2b2118'>"
+                + "<div id='ask'>"
                 + "<h2>Added " + saved + " photo" + (saved == 1 ? "" : "s") + "</h2>"
-                + "<p>They're on the Portal now. You can close this tab.</p></body>";
+                + "<p style='font-size:19px'>Add more?</p>"
+                + "<p><a href='/photo-add' style='display:inline-block;font-size:20px;"
+                + "padding:12px 28px;background:#9a6a1f;color:#fff;text-decoration:none;"
+                + "border-radius:8px;margin-right:12px'>Add more</a>"
+                + "<button type='button' style='font-size:20px;padding:12px 28px' "
+                + "onclick=\"document.getElementById('ask').style.display='none';"
+                + "document.getElementById('done').style.display='block'\">Done</button></p></div>"
+                + "<div id='done' style='display:none'><h2>All set</h2>"
+                + "<p>They're on the Portal now. You can close this tab.</p></div>"
+                + "</body>";
         byte[] b = html.getBytes("UTF-8");
         writeHead(out, 200, "OK", "text/html; charset=utf-8", b.length);
         out.write(b); out.flush(); s.close();
