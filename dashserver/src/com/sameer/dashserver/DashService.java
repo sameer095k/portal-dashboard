@@ -496,6 +496,70 @@ public class DashService extends Service {
                     if (!src.renameTo(dest)) throw new Exception("move failed");
                     return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"moved\"}");
                 }
+                case "/api/photos/autofile": {
+                    // One-shot backfill (his ask 2026-10-31): file every
+                    // existing photo into the Landscape / Portrait
+                    // albums. Scans Main + all albums (except the two
+                    // orientation albums themselves), dedups by content
+                    // so each unique image is filed exactly once, and
+                    // skips anything already filed. Uploads auto-file
+                    // on their own from here on.
+                    if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    File photosRoot = new File(ROOT, "photos").getCanonicalFile();
+                    java.util.Map<String, File> unique = new java.util.HashMap<>();
+                    List<File> scanDirs = new ArrayList<>();
+                    scanDirs.add(photosRoot);
+                    File[] entries = photosRoot.listFiles();
+                    if (entries != null) {
+                        for (File e : entries) {
+                            if (e.isDirectory() && !e.getName().startsWith(".")
+                                    && !e.getName().equals("Landscape")
+                                    && !e.getName().equals("Portrait")) {
+                                scanDirs.add(e);
+                            }
+                        }
+                    }
+                    for (File d : scanDirs) {
+                        File[] fs = d.listFiles();
+                        if (fs == null) continue;
+                        for (File f : fs) {
+                            if (f.isFile() && isImageName(f.getName())) {
+                                unique.putIfAbsent(md5Hex(f), f);
+                            }
+                        }
+                    }
+                    int filed = 0, already = 0, unknown = 0;
+                    for (File src : unique.values()) {
+                        String album = orientationAlbum(src);
+                        if (album == null) { unknown++; continue; }
+                        File dir = new File(photosRoot, album);
+                        if (!dir.exists()) dir.mkdirs();
+                        String hash = md5Hex(src);
+                        boolean present = false;
+                        File[] tf = dir.listFiles();
+                        if (tf != null) {
+                            for (File f : tf) {
+                                if (f.isFile() && f.length() == src.length()
+                                        && md5Hex(f).equals(hash)) { present = true; break; }
+                            }
+                        }
+                        if (present) { already++; continue; }
+                        File dest = new File(dir, src.getName());
+                        int k = 1;
+                        while (dest.exists()) {
+                            String nm = src.getName();
+                            int dot = nm.lastIndexOf('.');
+                            String base = dot > 0 ? nm.substring(0, dot) : nm;
+                            String ext = dot > 0 ? nm.substring(dot) : "";
+                            dest = new File(dir, base + "-" + (k++) + ext);
+                        }
+                        java.nio.file.Files.copy(src.toPath(), dest.toPath());
+                        filed++;
+                    }
+                    return new PortalApi.Result(200, new org.json.JSONObject()
+                            .put("ok", true).put("filed", filed)
+                            .put("already", already).put("unknown", unknown).toString());
+                }
                 case "/api/photos/album": {
                     if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     org.json.JSONObject req = new org.json.JSONObject(body);
@@ -1186,11 +1250,56 @@ public class DashService extends Service {
                         fos.write(data, contentStart, contentEnd - contentStart);
                     }
                     saved++;
+                    autoFileOrientation(outFile);
                 }
                 pos = next;
             }
         } catch (Exception ignored) { }
         return new int[]{saved, skipped};
+    }
+
+    /** "Landscape" or "Portrait" by DISPLAYED orientation: an EXIF
+        rotation of 5-8 transposes the pixel grid (phone portrait shots
+        are stored as landscape pixels + a rotation flag). Square
+        counts as Landscape. Null when dimensions can't be read. */
+    private static String orientationAlbum(File f) {
+        try {
+            android.graphics.BitmapFactory.Options o =
+                    new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            int w = o.outWidth, h = o.outHeight;
+            if (w <= 0 || h <= 0) return null;
+            String n = f.getName().toLowerCase(Locale.US);
+            if (n.endsWith(".jpg") || n.endsWith(".jpeg")) {
+                try {
+                    android.media.ExifInterface ex =
+                            new android.media.ExifInterface(f.getAbsolutePath());
+                    int rot = ex.getAttributeInt(
+                            android.media.ExifInterface.TAG_ORIENTATION,
+                            android.media.ExifInterface.ORIENTATION_NORMAL);
+                    if (rot >= 5 && rot <= 8) { int t = w; w = h; h = t; }
+                } catch (Exception ignored) { }
+            }
+            return w >= h ? "Landscape" : "Portrait";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Copy a photo into its orientation album — the Landscape and
+        Portrait albums stay current on their own as photos land
+        (his ask 2026-10-31). Same copy model as Add to. */
+    private void autoFileOrientation(File src) {
+        try {
+            String album = orientationAlbum(src);
+            if (album == null) return;
+            File dir = new File(new File(ROOT, "photos"), album);
+            if (!dir.exists()) dir.mkdirs();
+            File dest = new File(dir, src.getName());
+            if (dest.exists()) return;
+            java.nio.file.Files.copy(src.toPath(), dest.toPath());
+        } catch (Exception ignored) { }
     }
 
     private static int indexOf(byte[] hay, byte[] needle, int from) {
