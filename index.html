@@ -187,7 +187,7 @@
     padding:26px; width:min(560px,92%)}
   .phset-k{font-size:17px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--soft); margin-bottom:12px}
-  #phrotchips,#phordchips{display:flex; gap:10px; flex-wrap:wrap}
+  #phrotchips,#phordchips,#phsortchips{display:flex; gap:10px; flex-wrap:wrap}
   .rotchip{font-size:21px; padding:9px 18px; border-radius:999px; cursor:pointer;
     border:2px solid var(--line); background:transparent; color:var(--ink)}
   .rotchip.on{border-color:var(--gold); color:var(--gold)}
@@ -208,6 +208,26 @@
   body.app.railoff #phview.open:not(.editing) #phbar,
   body.app.railoff #phview.open:not(.editing) #phchips,
   body.app.railoff #phview.open:not(.editing) #phnewrow{display:none}
+  /* Photos, portrait: the bars stack into even rows instead of
+     crushing into one (his ask 2026-10-31). Landscape untouched. */
+  @media (orientation: portrait){
+    #phbar{flex-wrap:wrap; row-gap:12px}
+    #phbar button{flex:1 1 30%; white-space:nowrap}
+    #phprev{order:1} #phnext{order:2} #phaddbtn{order:3}
+    #pheditbtn{order:4} #phpinbtn{order:5}
+    #phsetbtn{order:6; margin-left:0}
+    #phup{order:7; flex:1 1 100%; margin-left:0}
+    #phup:empty{display:none}
+    #phview.editing #pheditbar{display:grid; row-gap:12px;
+      grid-template-columns:auto auto 1fr auto;
+      grid-template-areas:"info info info done" "sel add remove del"}
+    #phselinfo{grid-area:info; margin-right:0}
+    #phmove-sel{grid-area:sel} #phmove-btn{grid-area:add}
+    #phunfile-btn{grid-area:remove} #phdel-btn{grid-area:del}
+    #phdone-btn{grid-area:done}
+    #pheditbar button{white-space:nowrap}
+    #phscroll{padding-bottom:216px}
+  }
   #grid{
     display:grid; height:100vh; padding:26px; gap:20px;
     grid-template-columns: 370px 1fr;
@@ -632,6 +652,8 @@
       <div id="phrotchips"></div>
       <div class="phset-k" style="margin-top:22px">Order</div>
       <div id="phordchips"></div>
+      <div class="phset-k" style="margin-top:22px">Sort</div>
+      <div id="phsortchips"></div>
       <div id="phpinrow">
         <img id="phpinthumb" alt="">
         <span id="phpinname"></span>
@@ -1255,6 +1277,14 @@ async function syncViewState(){
         PHBAG = []; PHHIST = [];
         renderPhSettings();
       }
+      if(typeof j.sort === "string" && (j.sort === "added" || j.sort === "taken") && j.sort !== PHSORT){
+        PHSORT = j.sort;
+        localStorage.setItem("ph_sort", PHSORT);
+        PH = derivePhotos();
+        snapPin();
+        renderPhSettings();
+        if(PHEDIT) renderGrid();
+      }
     }
     /* First run after the move: the app face seeds the server from its
        stored settings (where Sameer set them); the screensaver face
@@ -1266,6 +1296,11 @@ async function syncViewState(){
     /* Same seeding for order on installs that predate it (6.11). */
     if(IS_APP && !PHORDSEEDED && !("order" in j)){
       PHORDSEEDED = true;
+      postPhSettings();
+    }
+    /* Same seeding for sort on installs that predate it (6.22). */
+    if(IS_APP && !PHSORTSEEDED && !("sort" in j)){
+      PHSORTSEEDED = true;
       postPhSettings();
     }
   }catch(e){ /* server hiccup; keep current view */ }
@@ -1513,6 +1548,9 @@ let PHPIN = localStorage.getItem("ph_pin") || null;
    how Sameer asked for the carousel to behave (2026-10-26). */
 let PHORDER = localStorage.getItem("ph_order") || "shuffle";
 if(PHORDER !== "shuffle" && PHORDER !== "seq") PHORDER = "shuffle";
+let PHSORT = localStorage.getItem("ph_sort") || "added";
+if(PHSORT !== "added" && PHSORT !== "taken") PHSORT = "added";
+let PHMETA = {}; /* path -> {taken: epoch ms} from /api/photos */
 let PHON = false;
 /* Rotate + pin are shared through the server's ui-state: the app and
    screensaver faces run in different apps with separate localStorage,
@@ -1520,19 +1558,38 @@ let PHON = false;
    set in the app while the screensaver kept its own speed). Local
    changes post immediately; syncViewState adopts the server's values;
    localStorage remains only as the pre-sync seed/fallback. */
-let PHSET_AT = 0, PHSEEDED = false, PHORDSEEDED = false;
+let PHSET_AT = 0, PHSEEDED = false, PHORDSEEDED = false, PHSORTSEEDED = false;
 function postPhSettings(){
   PHSET_AT = Date.now();
   fetch("/api/ui-state", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({rotate: PHROT, pin: PHPIN, order: PHORDER})}).catch(()=>{});
+    body: JSON.stringify({rotate: PHROT, pin: PHPIN, order: PHORDER, sort: PHSORT})}).catch(()=>{});
 }
 function pinPath(p){ return p ? p.split("?")[0] : p; }
 function pinIndex(){ return PHPIN ? PH.findIndex(p => pinPath(p) === PHPIN) : -1; }
 function snapPin(){ const i = pinIndex(); if(i >= 0) PHI = i; }
+/* "Added" is stamped into every upload's filename (yyyyMMdd-HHmmss);
+   anything else falls back to the file's mtime (the ?v= stamp).
+   "Taken" is EXIF, served in /api/photos' meta; no EXIF -> added. */
+function photoAddedMs(p){
+  const m = /\/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/.exec(p);
+  if(m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+  const v = /[?&]v=(\d+)/.exec(p);
+  return v ? +v[1] * 1000 : 0;
+}
+function photoTakenMs(p){
+  const t = PHMETA[pinPath(p)];
+  return t && t.taken ? t.taken : photoAddedMs(p);
+}
 function derivePhotos(){
-  if(CURALBUM === "All") return ALBUMS.flatMap(a => a.photos);
-  const a = ALBUMS.find(x => x.name === CURALBUM);
-  return a ? a.photos.slice() : [];
+  let list;
+  if(CURALBUM === "All") list = ALBUMS.flatMap(a => a.photos);
+  else {
+    const a = ALBUMS.find(x => x.name === CURALBUM);
+    list = a ? a.photos.slice() : [];
+  }
+  const key = PHSORT === "taken" ? photoTakenMs : photoAddedMs;
+  list.sort((x, y) => key(y) - key(x)); /* newest first */
+  return list;
 }
 function renderChips(){
   const bar = $("phchips");
@@ -1603,6 +1660,7 @@ async function loadPhotos(){
     const r = await fetch("/api/photos", {cache:"no-store"});
     if(r.ok){
       const j = await r.json();
+      PHMETA = j.meta || {};
       const fresh = j.albums || [];
       if(PHPIN && !fresh.some(a => (a.photos || []).some(p => pinPath(p) === PHPIN))){
         PHPIN = null;
@@ -1717,6 +1775,15 @@ function renderPhSettings(){
     b.addEventListener("click", () => setOrder(v));
     ow.appendChild(b);
   });
+  const sw = $("phsortchips");
+  sw.replaceChildren();
+  [["added", "Date added"], ["taken", "Date taken"]].forEach(([v, lb]) => {
+    const b = document.createElement("button");
+    b.className = "rotchip" + (PHSORT === v ? " on" : "");
+    b.textContent = lb;
+    b.addEventListener("click", () => setSort(v));
+    sw.appendChild(b);
+  });
   const row = $("phpinrow");
   if(PHPIN){
     row.classList.add("on");
@@ -1740,6 +1807,15 @@ function setOrder(v){
   PHBAG = []; PHHIST = []; /* a fresh bag for the new order */
   postPhSettings();
   renderPhSettings();
+}
+function setSort(v){
+  PHSORT = v;
+  localStorage.setItem("ph_sort", v);
+  PH = derivePhotos();
+  snapPin();
+  postPhSettings();
+  renderPhSettings();
+  if(PHEDIT) renderGrid();
 }
 $("phsetbtn").addEventListener("click", () => {
   renderPhSettings();
