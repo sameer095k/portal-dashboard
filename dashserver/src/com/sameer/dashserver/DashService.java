@@ -430,31 +430,53 @@ public class DashService extends Service {
                     return new PortalApi.Result(200, "{\"ok\":true}");
                 }
                 case "/api/photos/unfile": {
-                    // Remove from album (his ask 2026-10-31): the photo
-                    // leaves its album folder but survives in Main. If
-                    // Main already holds the same image (same bytes),
-                    // this album copy is deleted; otherwise the file
-                    // moves to Main. Already in Main: no-op.
+                    // Remove from album (his ask 2026-10-31; semantics
+                    // corrected same day after his "removed from main
+                    // but they stayed"): the copy leaves the folder it
+                    // sits in — Main included — and the image survives
+                    // if a copy lives in any OTHER folder. An album copy
+                    // with no twin anywhere moves to Main. A Main photo
+                    // with no twin elsewhere is the only copy: kept
+                    // (destroying it is Delete's job, not this button's).
                     if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     org.json.JSONObject req = new org.json.JSONObject(body);
                     File src = photoFile(req.getString("path"));
                     if (!src.isFile()) return new PortalApi.Result(404, "{\"error\":\"no file\"}");
                     File photosRoot = new File(ROOT, "photos").getCanonicalFile();
-                    if (photosRoot.equals(src.getParentFile())) {
-                        return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"none\"}");
-                    }
+                    File srcDir = src.getParentFile();
+                    boolean inMain = photosRoot.equals(srcDir);
                     String srcHash = md5Hex(src);
-                    boolean twin = false;
-                    File[] rootFiles = photosRoot.listFiles();
-                    if (rootFiles != null) {
-                        for (File f : rootFiles) {
-                            if (f.isFile() && f.length() == src.length()
-                                    && md5Hex(f).equals(srcHash)) { twin = true; break; }
+                    boolean twinElsewhere = false;
+                    File[] entries = photosRoot.listFiles();
+                    if (entries != null) {
+                        outer:
+                        for (File e : entries) {
+                            if (e.isFile() && !e.equals(src)
+                                    && e.length() == src.length()
+                                    && md5Hex(e).equals(srcHash)) {
+                                if (!inMain) { twinElsewhere = true; break; }
+                                // A same-folder twin in Main is a dupe,
+                                // not another album: doesn't count.
+                            } else if (e.isDirectory() && !e.getName().startsWith(".")
+                                    && !e.equals(srcDir)) {
+                                File[] sub = e.listFiles();
+                                if (sub != null) {
+                                    for (File f : sub) {
+                                        if (f.isFile() && f.length() == src.length()
+                                                && md5Hex(f).equals(srcHash)) {
+                                            twinElsewhere = true; break outer;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                    if (twin) {
+                    if (twinElsewhere) {
                         if (!src.delete()) throw new Exception("delete failed");
                         return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"copy-deleted\"}");
+                    }
+                    if (inMain) {
+                        return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"only-copy\"}");
                     }
                     File dest = new File(photosRoot, src.getName());
                     int k = 1;
