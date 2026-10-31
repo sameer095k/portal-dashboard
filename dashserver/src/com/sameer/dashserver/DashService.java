@@ -429,6 +429,45 @@ public class DashService extends Service {
                     if (!tmp.renameTo(dest)) { tmp.delete(); throw new Exception("copy failed"); }
                     return new PortalApi.Result(200, "{\"ok\":true}");
                 }
+                case "/api/photos/unfile": {
+                    // Remove from album (his ask 2026-10-31): the photo
+                    // leaves its album folder but survives in Main. If
+                    // Main already holds the same image (same bytes),
+                    // this album copy is deleted; otherwise the file
+                    // moves to Main. Already in Main: no-op.
+                    if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
+                    org.json.JSONObject req = new org.json.JSONObject(body);
+                    File src = photoFile(req.getString("path"));
+                    if (!src.isFile()) return new PortalApi.Result(404, "{\"error\":\"no file\"}");
+                    File photosRoot = new File(ROOT, "photos").getCanonicalFile();
+                    if (photosRoot.equals(src.getParentFile())) {
+                        return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"none\"}");
+                    }
+                    String srcHash = md5Hex(src);
+                    boolean twin = false;
+                    File[] rootFiles = photosRoot.listFiles();
+                    if (rootFiles != null) {
+                        for (File f : rootFiles) {
+                            if (f.isFile() && f.length() == src.length()
+                                    && md5Hex(f).equals(srcHash)) { twin = true; break; }
+                        }
+                    }
+                    if (twin) {
+                        if (!src.delete()) throw new Exception("delete failed");
+                        return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"copy-deleted\"}");
+                    }
+                    File dest = new File(photosRoot, src.getName());
+                    int k = 1;
+                    while (dest.exists()) {
+                        String nm = src.getName();
+                        int dot = nm.lastIndexOf('.');
+                        String base = dot > 0 ? nm.substring(0, dot) : nm;
+                        String ext = dot > 0 ? nm.substring(dot) : "";
+                        dest = new File(photosRoot, base + "-" + (k++) + ext);
+                    }
+                    if (!src.renameTo(dest)) throw new Exception("move failed");
+                    return new PortalApi.Result(200, "{\"ok\":true,\"action\":\"moved\"}");
+                }
                 case "/api/photos/album": {
                     if (!method.equals("POST")) return new PortalApi.Result(405, "{\"error\":\"method\"}");
                     org.json.JSONObject req = new org.json.JSONObject(body);
@@ -836,6 +875,18 @@ public class DashService extends Service {
             throw new Exception("bad path");
         }
         return f;
+    }
+
+    private static String md5Hex(File f) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+        try (FileInputStream fis = new FileInputStream(f)) {
+            byte[] buf = new byte[32768];
+            int n;
+            while ((n = fis.read(buf)) > 0) md.update(buf, 0, n);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : md.digest()) sb.append(String.format("%02x", b));
+        return sb.toString();
     }
 
     /** Album names: letters/digits/spaces and a few safe marks.
