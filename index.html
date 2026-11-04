@@ -436,6 +436,9 @@
   .lcard h2{font-size:20px; letter-spacing:2.5px; text-transform:uppercase; color:var(--soft); font-weight:600; margin-bottom:12px}
   .lcard li{list-style:none; font-size:27px; padding:5px 0; display:flex; gap:14px; align-items:baseline}
   .lcard li .t{color:var(--accent); font-variant-numeric:tabular-nums; font-size:23px; min-width:104px}
+  #up-card li{display:block; padding:7px 0}
+  #up-card .uttl{font-size:27px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  #up-card .uwhen{font-size:20px; color:var(--soft); margin-top:2px}
   .lcard .sub{font-size:20px; letter-spacing:2px; text-transform:uppercase; color:var(--soft); margin:16px 0 6px}
   .lcard li.small{font-size:23px; color:var(--soft)}
   .lcard .empty{font-size:24px; color:var(--soft)}
@@ -506,7 +509,7 @@
   <section id="right">
     <div id="prayer"></div>
     <div id="lists">
-      <div class="lcard"><h2>Today</h2><ul id="agenda"></ul></div>
+      <div class="lcard" id="up-card"><h2>Upcoming</h2><ul id="upcoming"></ul></div>
       <div class="lcard" id="groc-card"><h2>Groceries</h2><ul id="grocnow"></ul></div>
     </div>
   </section>
@@ -852,13 +855,13 @@ function render(){
       (p.chess_iqamah ? '<div class="pc">CHESS ' + p.chess_iqamah.replace(/\s?[AP]M/i,"") + '</div>' : '<div class="pc">&nbsp;</div>') +
       "</div>").join("");
   }
-  const ag = $("agenda");
-  const agHtml = (DATA.agenda && DATA.agenda.length)
-    ? DATA.agenda.map(e =>
-      "<li>" + (e.time && e.time !== "All day" ? '<span class="t">' + e.time + "</span>" : '<span class="t">All day</span>') +
-      "<span>" + e.title + "</span></li>").join("")
-    : '<li class="empty">Nothing scheduled</li>';
-  if(agHtml !== render.agHtml){ render.agHtml = agHtml; ag.innerHTML = agHtml; }
+  const up = $("upcoming");
+  const upHtml = (DATA.upcoming && DATA.upcoming.length)
+    ? DATA.upcoming.map((e, i) =>
+      '<li data-up="' + i + '"><div class="uttl">' + e.title + "</div>" +
+      '<div class="uwhen">' + upWhenText(e) + "</div></li>").join("")
+    : '<li class="empty">Nothing on the calendar this week</li>';
+  if(upHtml !== render.upHtml){ render.upHtml = upHtml; up.innerHTML = upHtml; }
   const gn = $("grocnow");
   if(DATA.grocery){
     const gHtml = (DATA.grocery.now || []).map(i => "<li>" + i + "</li>").join("") || '<li class="empty">—</li>';
@@ -905,6 +908,7 @@ function render(){
         is no snapshot file anymore. ---- */
 const PR_CACHE_KEY = "pr_cache_v1", WX_CACHE_KEY = "wx_cache_v1",
       AG_CACHE_KEY = "ag_cache_v1", HG_CACHE_KEY = "hg_cache_v1",
+      UP_CACHE_KEY = "up_cache_v1",
       WORD_CACHE_KEY = "word_cache_v1";
 function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -913,6 +917,7 @@ function seedFromCaches(){
     prayer: lsGet(PR_CACHE_KEY),
     weather: lsGet(WX_CACHE_KEY),
     agenda: lsGet(AG_CACHE_KEY),
+    upcoming: lsGet(UP_CACHE_KEY),
     grocery: lsGet(HG_CACHE_KEY),
     word: lsGet(WORD_CACHE_KEY)
   };
@@ -2344,28 +2349,67 @@ $("cd-remove").addEventListener("click", async () => {
   }catch(e){ cdErr("Couldn't remove — try again"); }
 });
 
-/* ---- home agenda: today's events from the live calendar read,
-        cached in localStorage so a failed read leaves the last
-        good agenda on the home face. ---- */
-async function loadLiveAgenda(){
+/* ---- home upcoming card (2026-11-04, Sameer's spec): the next
+        7 days from the same range read the calendar view uses,
+        soonest first, capped at 4. Tapping a row opens the shared
+        event detail sheet; tapping the card elsewhere opens the
+        calendar. Cached in localStorage so a failed read leaves
+        the last good list on the home face. ---- */
+function upStartKey(e){
+  return e.allday ? new Date(e.start + "T00:00:00").getTime()
+                  : new Date(e.start).getTime();
+}
+function upWhenText(e){
+  const now = new Date();
+  const sod = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  if(e.allday){
+    const sd = new Date(e.start + "T00:00:00");
+    const diff = Math.round((sod(sd) - sod(now)) / 86400000);
+    const day = diff <= 0 ? "Today" : diff === 1 ? "Tomorrow" : fmtCalDay(sd);
+    return day + " · All day";
+  }
+  const sd = new Date(e.start);
+  const diff = Math.round((sod(sd) - sod(now)) / 86400000);
+  const day = diff <= 0 ? "Today" : diff === 1 ? "Tomorrow" : fmtCalDay(sd);
+  return day + " · " + fmtCalTime(sd);
+}
+async function loadUpcoming(){
   if(!DATA) return;
   try{
-    const r = await fetch("/api/agenda", {cache:"no-store"});
+    const now = new Date();
+    const end = new Date(now.getTime() + 7 * 86400000);
+    const r = await fetch("/api/calendar?timeMin=" + encodeURIComponent(now.toISOString()) +
+      "&timeMax=" + encodeURIComponent(end.toISOString()), {cache:"no-store"});
     if(!r.ok) return;
     const j = await r.json();
-    if(Array.isArray(j.agenda)){ DATA.agenda = j.agenda; lsSet(AG_CACHE_KEY, j.agenda); render(); }
-  }catch(e){ /* last-good agenda stays */ }
+    if(!Array.isArray(j.events)) return;
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const keep = j.events.filter(e => {
+      if(!e || !e.title || !e.start || !e.end) return false;
+      const eEnd = e.allday ? new Date(e.end + "T00:00:00") : new Date(e.end);
+      return eEnd > (e.allday ? startToday : now);
+    });
+    keep.sort((a, b) => upStartKey(a) - upStartKey(b));
+    DATA.upcoming = keep.slice(0, 4);
+    lsSet(UP_CACHE_KEY, DATA.upcoming);
+    render();
+  }catch(e){ /* last-good upcoming stays */ }
 }
+$("up-card").addEventListener("click", ev => {
+  const row = ev.target.closest("[data-up]");
+  if(row){ openCalDetail((DATA.upcoming || [])[Number(row.getAttribute("data-up"))]); return; }
+  if(IS_APP) setView("calendar"); else showView("calendar");
+});
 
 seedFromCaches();
 fetchLive();
 fetchWord();
 loadHomeGrocery();
-loadLiveAgenda();
+loadUpcoming();
 syncViewState();
 setInterval(syncViewState, 15000);
 setInterval(loadHomeGrocery, 300000);
-setInterval(loadLiveAgenda, 300000);
+setInterval(loadUpcoming, 300000);
 setInterval(fetchWord, 1800000);
 setInterval(fetchLive, 600000);
 setInterval(tick, 1000);
