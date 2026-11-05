@@ -398,7 +398,7 @@
   .cev.queued, .cad.queued, .cevrow.queued{border:1.5px dashed var(--gold)}
   .qtag{font-size:13px; font-weight:700; letter-spacing:.8px;
     text-transform:uppercase; color:var(--gold); flex:none}
-  #caldetail{position:absolute; inset:0; display:none; align-items:center;
+  #caldetail{position:fixed; inset:0; display:none; align-items:center;
     justify-content:center; background:rgba(0,0,0,.35); z-index:6}
   #caldetail.open{display:flex}
   #cd-title{font-size:31px; font-weight:600; line-height:1.25; margin-bottom:14px}
@@ -601,7 +601,10 @@
       </div>
     </div>
   </div>
-  <div id="caldetail">
+  
+</section>
+
+<div id="caldetail">
     <div class="calcard">
       <div id="cd-title"></div>
       <div class="cdrow"><span class="k">When</span><span id="cd-when"></span></div>
@@ -617,7 +620,6 @@
       </div>
     </div>
   </div>
-</section>
 
 <section id="phview" class="view">
   <img id="phimg" alt="">
@@ -2616,5 +2618,6 @@ setInterval(pollShow, 5000);
   if(el) el.textContent = new Date().getDate(); }
   setDay(); setInterval(setDay, 1800000); })();
 </script>
+
 </body>
 </html>
