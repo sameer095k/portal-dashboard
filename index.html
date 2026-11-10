@@ -1589,8 +1589,17 @@ function photoTakenMs(p){
 }
 function derivePhotos(){
   let list;
-  if(CURALBUM === "All") list = ALBUMS.flatMap(a => a.photos);
-  else {
+  if(CURALBUM === "All"){
+    /* One file per photo since the 2026-11-09 metadata model — the
+       same path appears once per album it belongs to, so the union
+       dedupes by path. First occurrence wins (Main comes first). */
+    const seen = new Set();
+    list = [];
+    for(const a of ALBUMS) for(const p of a.photos){
+      const k = pinPath(p);
+      if(!seen.has(k)){ seen.add(k); list.push(p); }
+    }
+  } else {
     const a = ALBUMS.find(x => x.name === CURALBUM);
     list = a ? a.photos.slice() : [];
   }
@@ -1601,7 +1610,7 @@ function derivePhotos(){
 function renderChips(){
   const bar = $("phchips");
   bar.replaceChildren();
-  const total = ALBUMS.reduce((s, a) => s + a.photos.length, 0);
+  const total = new Set(ALBUMS.flatMap(a => a.photos.map(pinPath))).size;
   const mk = (name, count) => {
     const b = document.createElement("button");
     b.className = "phchip" + (CURALBUM === name ? " on" : "");
@@ -1933,7 +1942,7 @@ $("phunfile-btn").addEventListener("click", async () => {
     try{
       const r = await fetch("/api/photos/unfile", {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({path: p.split("?")[0]})});
+        body: JSON.stringify({path: p.split("?")[0], album: CURALBUM})});
       if(r.ok){
         const j = await r.json().catch(() => ({}));
         if(j.action === "only-copy") main++; else done++;
